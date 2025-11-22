@@ -12,5 +12,7 @@ let () =
 
   (* Uncomment the code below to pass the first stage *)
   let (client_socket, _) = accept server_socket in 
+  let data = "+PONG\r\n" in
+  let _ = write client_socket (Bytes.of_string data) 0 (String.length data) in
   close client_socket; 
   close server_socket 
