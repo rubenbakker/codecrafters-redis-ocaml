@@ -9,9 +9,12 @@ let () =
 
   (* Uncomment the code below to pass the first stage *)
   let data = "+PONG\r\n" in
+  let buf = Bytes.create 32 in
+  let client_socket, _ = accept server_socket in
   while true do
-    let client_socket, _ = accept server_socket in
+    let _ = read client_socket buf 0 16 in
     let _ = write client_socket (Bytes.of_string data) 0 (String.length data) in
-    close client_socket
+    ()
   done;
+  close client_socket;
   close server_socket
