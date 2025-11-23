@@ -12,10 +12,10 @@ let run_and_close_client client_socket =
   let work () = process_client client_socket in
   Fun.protect ~finally work
 
-let rec accept_loop server_socket =
+let rec accept_loop server_socket threads =
   let client_socket, _ = accept server_socket in
-  let _ = Thread.create run_and_close_client client_socket in
   accept_loop server_socket
+    (Thread.create run_and_close_client client_socket :: threads)
 
 let () =
   (* Create a TCP server socket *)
@@ -24,9 +24,7 @@ let () =
   bind server_socket (ADDR_INET (inet_addr_of_string "127.0.0.1", 6379));
   listen server_socket 10;
 
-  try accept_loop server_socket
+  try accept_loop server_socket []
   with e ->
     close server_socket;
     raise e
-
-(* close server_socket *)
