@@ -23,9 +23,8 @@ let () =
   (* Uncomment the code below to pass the first stage *)
   while true do
     let client_socket, _ = accept server_socket in
-    Printf.eprintf "starting new thread %d"
-      (List.length !client_threads)
-      client_threads
-    := Thread.create process_client client_socket :: !client_threads
+    Printf.eprintf "starting new thread %d" (List.length !client_threads);
+    client_threads :=
+      Thread.create process_client client_socket :: !client_threads
   done
 (* close server_socket *)
