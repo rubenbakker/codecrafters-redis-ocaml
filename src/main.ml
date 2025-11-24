@@ -16,12 +16,10 @@ let process_command str =
   | "get", [ key ] -> (
       let value = Store.get key in
       match value with None -> Resp.Null | Some v -> Resp.from_store v)
-  | "rpush", [ key; value ] ->
+  | "rpush", key :: rest ->
       let exiting_list = Store.get key in
       let new_list =
-        match exiting_list with
-        | Some (Store.List l) -> l @ [ value ]
-        | _ -> [ value ]
+        match exiting_list with Some (Store.List l) -> l @ rest | _ -> rest
       in
       Store.set key (Store.List new_list) Lifetime.Forever;
       Resp.Integer (List.length new_list)
