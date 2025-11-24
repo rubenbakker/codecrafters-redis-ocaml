@@ -27,9 +27,11 @@ let rec from_string_internal str pos =
     done;
     (!total_length + prefix_length, Resp.List (List.rev !list)))
   else
-    let _ = Str.string_match string_regexp str pos in
-    ( String.length (Str.matched_group 0 str),
-      Resp.String (Str.matched_group 2 str) )
+    let string_result = Str.string_match string_regexp str pos in
+    if string_result then
+      ( String.length (Str.matched_group 0 str),
+        Resp.String (Str.matched_group 2 str) )
+    else (0, Resp.String "")
 
 let from_string str pos =
   let _, item = from_string_internal str pos in
