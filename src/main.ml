@@ -1,10 +1,19 @@
 open Unix
 
+let process_command str =
+  let command, arg = Resp.command str in
+  match command with
+  | "ping" -> "+PONG\r\n"
+  | "echo" -> Resp.string_to_resp arg
+  | _ -> "+PONG\r\n"
+
 let rec process_client client_socket =
-  let data = "+PONG\r\n" in
-  let buf = Bytes.create 32 in
-  let _ = read client_socket buf 0 16 in
-  let _ = write client_socket (Bytes.of_string data) 0 (String.length data) in
+  let buf = Bytes.create 1024 in
+  let _ = Unix.read client_socket buf 0 1024 in
+  let result = buf |> String.of_bytes |> process_command in
+  let _ =
+    write client_socket (Bytes.of_string result) 0 (String.length result)
+  in
   process_client client_socket
 
 let run_and_close_client client_socket =
