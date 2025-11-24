@@ -1,14 +1,18 @@
 open Base
 
 module Resp = struct
-  type t = List of t list | String of string [@@deriving compare, equal, sexp]
+  type t = List of t list | BulkString of string | SimpleString of string
+  [@@deriving compare, equal, sexp]
 end
+
+let null_string = "$-1\r\n"
 
 exception InvalidData
 
 type t = Resp.t
 
-let string_regexp = Str.regexp "^\\$\\([0-9]+\\)\r\n\\(.*\\)\r\n"
+let simple_string_regex = Str.regexp "^\\+\\(.*\\)\r\n"
+let bulk_string_regex = Str.regexp "^\\$\\([0-9]+\\)\r\n\\(.*\\)\r\n"
 let list_regexp = Str.regexp "^\\*\\([0-9]+\\)\r\n"
 
 let rec from_string_internal str pos =
@@ -27,11 +31,16 @@ let rec from_string_internal str pos =
     done;
     (!total_length + prefix_length, Resp.List (List.rev !list)))
   else
-    let string_result = Str.string_match string_regexp str pos in
-    if string_result then
+    let simple_string_result = Str.string_match simple_string_regex str pos in
+    if simple_string_result then
       ( String.length (Str.matched_group 0 str),
-        Resp.String (Str.matched_group 2 str) )
-    else (0, Resp.String "")
+        Resp.SimpleString (Str.matched_group 1 str) )
+    else
+      let string_result = Str.string_match bulk_string_regex str pos in
+      if string_result then
+        ( String.length (Str.matched_group 0 str),
+          Resp.BulkString (Str.matched_group 2 str) )
+      else (0, Resp.BulkString "")
 
 let from_string str pos =
   let _, item = from_string_internal str pos in
@@ -39,33 +48,47 @@ let from_string str pos =
 
 let rec to_string item =
   match item with
-  | Resp.String str -> Printf.sprintf "$%d\r\n%s\r\n" (String.length str) str
+  | Resp.SimpleString str -> Printf.sprintf "+%s\r\n" str
+  | Resp.BulkString str ->
+      Printf.sprintf "$%d\r\n%s\r\n" (String.length str) str
   | Resp.List list ->
       Printf.sprintf "*%d\r\n%s" (List.length list)
         (String.concat ~sep:"" (List.map list ~f:(fun x -> to_string x)))
 
+let arg arg =
+  match arg with
+  | Resp.BulkString str -> str
+  | Resp.SimpleString str -> str
+  | Resp.List _ -> ""
+
 let command str =
-  match from_string str 0 with
-  | Resp.List [ Resp.String command ] -> (String.lowercase command, "")
-  | Resp.List [ Resp.String command; Resp.String arg ] ->
-      (String.lowercase command, arg)
-  | Resp.String command -> (String.lowercase command, "")
+  let parsed_command = from_string str 0 in
+  match parsed_command with
+  | Resp.List (Resp.BulkString command :: rest) ->
+      (String.lowercase command, List.map ~f:arg rest)
   | _ -> raise InvalidData
 
-let string_to_resp str = Resp.String str |> to_string
+let to_simple_string str = Resp.SimpleString str |> to_string
+let to_bulk_string str = Resp.BulkString str |> to_string
 
-let%test_unit "from_string string" =
-  [%test_eq: Resp.t] (from_string "$3\r\nHey\r\n" 0) (Resp.String "Hey")
+let%test_unit "from_string simple string" =
+  [%test_eq: Resp.t] (from_string "+Hey\r\n" 0) (Resp.SimpleString "Hey")
 
-let%test_unit "to_string string" =
-  [%test_eq: string] (to_string (Resp.String "Hey")) "$3\r\nHey\r\n"
+let%test_unit "from_string bulk string" =
+  [%test_eq: Resp.t] (from_string "$3\r\nHey\r\n" 0) (Resp.BulkString "Hey")
+
+let%test_unit "to_string bulk string" =
+  [%test_eq: string] (to_string (Resp.BulkString "Hey")) "$3\r\nHey\r\n"
+
+let%test_unit "to_string simple string" =
+  [%test_eq: string] (to_string (Resp.SimpleString "Hey")) "+Hey\r\n"
 
 let%test_unit "from_string list" =
   [%test_eq: Resp.t]
     (from_string "*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n" 0)
-    (Resp.List [ Resp.String "hello"; Resp.String "world" ])
+    (Resp.List [ Resp.BulkString "hello"; Resp.BulkString "world" ])
 
-let%test_unit "from_string list" =
+let%test_unit "from_string list with 2 bulk strings" =
   [%test_eq: string]
-    (to_string (Resp.List [ Resp.String "hello"; Resp.String "world" ]))
+    (to_string (Resp.List [ Resp.BulkString "hello"; Resp.BulkString "world" ]))
     "*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n"
