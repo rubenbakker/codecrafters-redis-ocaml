@@ -8,13 +8,19 @@ let process_command str =
   | _ -> "+PONG\r\n"
 
 let rec process_client client_socket =
-  let buf = Bytes.create 1024 in
-  let _ = Unix.read client_socket buf 0 1024 in
-  let result = buf |> String.of_bytes |> process_command in
-  let _ =
-    write client_socket (Bytes.of_string result) 0 (String.length result)
-  in
-  process_client client_socket
+  try
+    let buf = Bytes.create 2024 in
+    let bytes_read = Unix.read client_socket buf 0 2024 in
+    if bytes_read > 0 then
+      let result = buf |> String.of_bytes |> process_command in
+      let _ =
+        write client_socket (Bytes.of_string result) 0 (String.length result)
+      in
+      process_client client_socket
+    else ()
+  with
+  | Unix_error (ECONNRESET, _, _) -> ()
+  | End_of_file -> ()
 
 let run_and_close_client client_socket =
   let finally () = close client_socket in
@@ -23,8 +29,8 @@ let run_and_close_client client_socket =
 
 let rec accept_loop server_socket threads =
   let client_socket, _ = accept server_socket in
-  accept_loop server_socket
-    (Thread.create run_and_close_client client_socket :: threads)
+  let thread = Thread.create run_and_close_client client_socket in
+  accept_loop server_socket (thread :: threads)
 
 let () =
   (* Create a TCP server socket *)
