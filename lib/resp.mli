@@ -1,8 +1,14 @@
-type t
+type t =
+  | RespList of t list
+  | BulkString of string
+  | SimpleString of string
+  | Integer of int
 
 val from_string : string -> int -> t
 val to_string : t -> string
 val command : string -> string * string list
 val to_bulk_string : string -> string
 val to_simple_string : string -> string
+val to_integer_string : int -> string
 val null_string : string
+val from_store : Store.t -> t

@@ -1,16 +1,17 @@
 open Base
 
-module Resp = struct
-  type t = List of t list | BulkString of string | SimpleString of string
-  [@@deriving compare, equal, sexp]
-end
+type t =
+  | RespList of t list
+  | BulkString of string
+  | SimpleString of string
+  | Integer of int
+[@@deriving compare, equal, sexp]
 
 let null_string = "$-1\r\n"
 
 exception InvalidData
 
-type t = Resp.t
-
+let integer_regex = Str.regexp "^\\:\\([\\+\\-]?\\)\\(.*\\)\r\n"
 let simple_string_regex = Str.regexp "^\\+\\(.*\\)\r\n"
 let bulk_string_regex = Str.regexp "^\\$\\([0-9]+\\)\r\n\\(.*\\)\r\n"
 let list_regexp = Str.regexp "^\\*\\([0-9]+\\)\r\n"
@@ -29,18 +30,25 @@ let rec from_string_internal str pos =
       total_length := !total_length + length;
       list := item :: !list
     done;
-    (!total_length + prefix_length, Resp.List (List.rev !list)))
+    (!total_length + prefix_length, RespList (List.rev !list)))
   else
-    let simple_string_result = Str.string_match simple_string_regex str pos in
-    if simple_string_result then
-      ( String.length (Str.matched_group 0 str),
-        Resp.SimpleString (Str.matched_group 1 str) )
+    let integer_result = Str.string_match integer_regex str pos in
+    if integer_result then
+      let prefix = Str.matched_group 1 str in
+      let factor = match prefix with "-" -> -1 | _ -> 1 in
+      let value = Stdlib.int_of_string (Str.matched_group 2 str) in
+      (String.length (Str.matched_group 0 str), Integer (value * factor))
     else
-      let string_result = Str.string_match bulk_string_regex str pos in
-      if string_result then
+      let simple_string_result = Str.string_match simple_string_regex str pos in
+      if simple_string_result then
         ( String.length (Str.matched_group 0 str),
-          Resp.BulkString (Str.matched_group 2 str) )
-      else (0, Resp.BulkString "")
+          SimpleString (Str.matched_group 1 str) )
+      else
+        let string_result = Str.string_match bulk_string_regex str pos in
+        if string_result then
+          ( String.length (Str.matched_group 0 str),
+            BulkString (Str.matched_group 2 str) )
+        else (0, BulkString "")
 
 let from_string str pos =
   let _, item = from_string_internal str pos in
@@ -48,47 +56,69 @@ let from_string str pos =
 
 let rec to_string item =
   match item with
-  | Resp.SimpleString str -> Printf.sprintf "+%s\r\n" str
-  | Resp.BulkString str ->
-      Printf.sprintf "$%d\r\n%s\r\n" (String.length str) str
-  | Resp.List list ->
+  | Integer integer_value ->
+      Printf.sprintf ":%s%d\r\n"
+        (if integer_value < 0 then "-" else "")
+        integer_value
+  | SimpleString str -> Printf.sprintf "+%s\r\n" str
+  | BulkString str -> Printf.sprintf "$%d\r\n%s\r\n" (String.length str) str
+  | RespList list ->
       Printf.sprintf "*%d\r\n%s" (List.length list)
         (String.concat ~sep:"" (List.map list ~f:(fun x -> to_string x)))
 
+let from_store item =
+  match item with
+  | Store.String str -> BulkString str
+  | Store.List l -> RespList (List.map ~f:(fun str -> BulkString str) l)
+
 let arg arg =
   match arg with
-  | Resp.BulkString str -> str
-  | Resp.SimpleString str -> str
-  | Resp.List _ -> ""
+  | Integer integer -> Stdlib.string_of_int integer
+  | BulkString str -> str
+  | SimpleString str -> str
+  | RespList _ -> ""
 
 let command str =
   let parsed_command = from_string str 0 in
   match parsed_command with
-  | Resp.List (Resp.BulkString command :: rest) ->
+  | RespList (BulkString command :: rest) ->
       (String.lowercase command, List.map ~f:arg rest)
   | _ -> raise InvalidData
 
-let to_simple_string str = Resp.SimpleString str |> to_string
-let to_bulk_string str = Resp.BulkString str |> to_string
+let to_simple_string str = SimpleString str |> to_string
+let to_bulk_string str = BulkString str |> to_string
+let to_integer_string value = Integer value |> to_string
+
+let%test_unit "from_string integer" =
+  [%test_eq: t] (from_string ":+55\r\n" 0) (Integer 55)
+
+let%test_unit "from_string integer" =
+  [%test_eq: t] (from_string ":55\r\n" 0) (Integer 55)
+
+let%test_unit "from_string integer" =
+  [%test_eq: t] (from_string ":-55\r\n" 0) (Integer (55 * -1))
 
 let%test_unit "from_string simple string" =
-  [%test_eq: Resp.t] (from_string "+Hey\r\n" 0) (Resp.SimpleString "Hey")
+  [%test_eq: t] (from_string "+Hey\r\n" 0) (SimpleString "Hey")
 
 let%test_unit "from_string bulk string" =
-  [%test_eq: Resp.t] (from_string "$3\r\nHey\r\n" 0) (Resp.BulkString "Hey")
+  [%test_eq: t] (from_string "$3\r\nHey\r\n" 0) (BulkString "Hey")
 
 let%test_unit "to_string bulk string" =
-  [%test_eq: string] (to_string (Resp.BulkString "Hey")) "$3\r\nHey\r\n"
+  [%test_eq: string] (to_string (BulkString "Hey")) "$3\r\nHey\r\n"
 
 let%test_unit "to_string simple string" =
-  [%test_eq: string] (to_string (Resp.SimpleString "Hey")) "+Hey\r\n"
+  [%test_eq: string] (to_string (SimpleString "Hey")) "+Hey\r\n"
+
+let%test_unit "to_string integer" =
+  [%test_eq: string] (to_string (Integer 55)) ":+55\r\n"
 
 let%test_unit "from_string list" =
-  [%test_eq: Resp.t]
+  [%test_eq: t]
     (from_string "*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n" 0)
-    (Resp.List [ Resp.BulkString "hello"; Resp.BulkString "world" ])
+    (RespList [ BulkString "hello"; BulkString "world" ])
 
 let%test_unit "from_string list with 2 bulk strings" =
   [%test_eq: string]
-    (to_string (Resp.List [ Resp.BulkString "hello"; Resp.BulkString "world" ]))
+    (to_string (RespList [ BulkString "hello"; BulkString "world" ]))
     "*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n"
