@@ -3,6 +3,7 @@ type t =
   | BulkString of string
   | SimpleString of string
   | Integer of int
+  | Null
 
 val from_string : string -> int -> t
 val to_string : t -> string

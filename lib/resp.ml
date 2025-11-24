@@ -5,6 +5,7 @@ type t =
   | BulkString of string
   | SimpleString of string
   | Integer of int
+  | Null
 [@@deriving compare, equal, sexp]
 
 let null_string = "$-1\r\n"
@@ -65,6 +66,7 @@ let rec to_string item =
   | RespList list ->
       Printf.sprintf "*%d\r\n%s" (List.length list)
         (String.concat ~sep:"" (List.map list ~f:(fun x -> to_string x)))
+  | Null -> null_string
 
 let from_store item =
   match item with
@@ -77,6 +79,7 @@ let arg arg =
   | BulkString str -> str
   | SimpleString str -> str
   | RespList _ -> ""
+  | Null -> ""
 
 let command str =
   let parsed_command = from_string str 0 in

@@ -5,19 +5,17 @@ open Lib
 let process_command str =
   let command = Resp.command str in
   match command with
-  | "ping", [] -> Resp.to_simple_string "PONG"
+  | "ping", [] -> Resp.SimpleString "PONG"
   | "set", [ key; value ] ->
       Store.set key (Store.String value) Lifetime.Forever;
-      Resp.to_simple_string "OK"
+      Resp.SimpleString "OK"
   | "set", [ key; value; expiry_type; expiry_value ] ->
       Store.set key (Store.String value)
         (Lifetime.create_expiry expiry_type expiry_value);
-      Resp.to_simple_string "OK"
+      Resp.SimpleString "OK"
   | "get", [ key ] -> (
       let value = Store.get key in
-      match value with
-      | None -> Resp.null_string
-      | Some v -> Resp.from_store v |> Resp.to_string)
+      match value with None -> Resp.Null | Some v -> Resp.from_store v)
   | "rpush", [ key; value ] ->
       let exiting_list = Store.get key in
       let new_list =
@@ -26,16 +24,18 @@ let process_command str =
         | _ -> [ value ]
       in
       Store.set key (Store.List new_list) Lifetime.Forever;
-      Resp.to_integer_string (List.length new_list)
-  | "echo", [ message ] -> Resp.to_bulk_string message
-  | _ -> Resp.null_string
+      Resp.Integer (List.length new_list)
+  | "echo", [ message ] -> Resp.BulkString message
+  | _ -> Resp.Null
 
 let rec process_client client_socket =
   try
     let buf = Bytes.create 2024 in
     let bytes_read = Unix.read client_socket buf 0 2024 in
     if bytes_read > 0 then
-      let result = buf |> Stdlib.String.of_bytes |> process_command in
+      let result =
+        buf |> Stdlib.String.of_bytes |> process_command |> Resp.to_string
+      in
       let _ =
         write client_socket (Bytes.of_string result) 0 (String.length result)
       in
