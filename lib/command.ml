@@ -31,7 +31,6 @@ let lrange key from_idx to_idx =
   | Some (Store.List l) when List.length l > pos ->
       let to_idx = Int.min to_idx (List.length l - 1) in
       let len = to_idx - pos + 1 in
-      Stdlib.Printf.eprintf "pos: %d, to_idx: %d, len: %d" pos to_idx len;
       Resp.RespList
         (l |> List.sub ~pos ~len |> List.map ~f:(fun str -> Resp.BulkString str))
   | _ -> Resp.RespList []

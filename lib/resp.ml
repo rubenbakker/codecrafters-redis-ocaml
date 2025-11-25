@@ -21,7 +21,7 @@ let rec from_string_internal str pos =
   let list_result = Str.string_match list_regexp str pos in
   if list_result then (
     let prefix_length = String.length (Str.matched_group 0 str) in
-    let count = Stdlib.int_of_string (Str.matched_group 1 str) in
+    let count = Int.of_string (Str.matched_group 1 str) in
     let list = ref [] in
     let total_length = ref 0 in
     for _idx = 0 to count - 1 do
@@ -37,7 +37,7 @@ let rec from_string_internal str pos =
     if integer_result then
       let prefix = Str.matched_group 1 str in
       let factor = match prefix with "-" -> -1 | _ -> 1 in
-      let value = Stdlib.int_of_string (Str.matched_group 2 str) in
+      let value = Int.of_string (Str.matched_group 2 str) in
       (String.length (Str.matched_group 0 str), Integer (value * factor))
     else
       let simple_string_result = Str.string_match simple_string_regex str pos in
@@ -75,7 +75,7 @@ let from_store item =
 
 let arg arg =
   match arg with
-  | Integer integer -> Stdlib.string_of_int integer
+  | Integer integer -> Int.to_string integer
   | BulkString str -> str
   | SimpleString str -> str
   | RespList _ -> ""

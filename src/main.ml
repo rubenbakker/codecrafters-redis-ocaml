@@ -8,7 +8,7 @@ let rec process_client client_socket =
     let bytes_read = Unix.read client_socket buf 0 2024 in
     if bytes_read > 0 then
       let result =
-        buf |> Stdlib.String.of_bytes |> Command.process |> Resp.to_string
+        buf |> Bytes.to_string |> Command.process |> Resp.to_string
       in
       let _ =
         write client_socket (Bytes.of_string result) 0 (String.length result)
