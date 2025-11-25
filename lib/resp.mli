@@ -4,6 +4,7 @@ type t =
   | SimpleString of string
   | Integer of int
   | Null
+  | NullArray
 
 val from_string : string -> int -> t
 val to_string : t -> string

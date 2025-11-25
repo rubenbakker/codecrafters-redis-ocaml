@@ -6,6 +6,7 @@ type t =
   | SimpleString of string
   | Integer of int
   | Null
+  | NullArray
 [@@deriving compare, equal, sexp]
 
 let null_string = "$-1\r\n"
@@ -67,11 +68,12 @@ let rec to_string item =
       Printf.sprintf "*%d\r\n%s" (List.length list)
         (String.concat ~sep:"" (List.map ~f:(fun x -> to_string x) list))
   | Null -> null_string
+  | NullArray -> "*-1\r\n"
 
 let from_store item =
   match item with
-  | Store.String str -> BulkString str
-  | Store.List l -> RespList (List.map ~f:(fun str -> BulkString str) l)
+  | Store.StorageString str -> BulkString str
+  | Store.StorageList l -> RespList (List.map ~f:(fun str -> BulkString str) l)
 
 let arg arg =
   match arg with
@@ -79,6 +81,7 @@ let arg arg =
   | BulkString str -> str
   | SimpleString str -> str
   | RespList _ -> ""
+  | NullArray -> ""
   | Null -> ""
 
 let command str =

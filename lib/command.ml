@@ -9,7 +9,7 @@ let set ~expiry key value =
         Lifetime.create_expiry expiry_type expiry_value
     | None -> Lifetime.Forever
   in
-  Store.set key (Store.String value) expiry;
+  Store.set key (Store.StorageString value) expiry;
   Resp.SimpleString "OK"
 
 let get key =
@@ -19,18 +19,20 @@ let get key =
 let rpush key rest =
   let exiting_list = Store.get key in
   let new_list =
-    match exiting_list with Some (Store.List l) -> l @ rest | _ -> rest
+    match exiting_list with Some (Store.StorageList l) -> l @ rest | _ -> rest
   in
-  Store.set key (Store.List new_list) Lifetime.Forever;
+  Store.set key (Store.StorageList new_list) Lifetime.Forever;
   Resp.Integer (List.length new_list)
 
 let lpush key rest =
   let values = List.rev rest in
   let exiting_list = Store.get key in
   let new_list =
-    match exiting_list with Some (Store.List l) -> values @ l | _ -> values
+    match exiting_list with
+    | Some (Store.StorageList l) -> values @ l
+    | _ -> values
   in
-  Store.set key (Store.List new_list) Lifetime.Forever;
+  Store.set key (Store.StorageList new_list) Lifetime.Forever;
   Resp.Integer (List.length new_list)
 
 let normalize_lrange len from_idx to_idx =
@@ -48,7 +50,7 @@ let lrange key from_idx to_idx =
   let from_idx = Int.of_string from_idx in
   let to_idx = Int.of_string to_idx in
   match Store.get key with
-  | Some (Store.List l) -> (
+  | Some (Store.StorageList l) -> (
       match normalize_lrange (List.length l) from_idx to_idx with
       | Some (pos, len) ->
           Resp.RespList
@@ -59,17 +61,17 @@ let lrange key from_idx to_idx =
 
 let llen key =
   match Store.get key with
-  | Some (Store.List l) -> Resp.Integer (List.length l)
+  | Some (Store.StorageList l) -> Resp.Integer (List.length l)
   | _ -> Resp.Integer 0
 
 let lpop key count =
   match Store.get key with
-  | Some (Store.List existing_list) -> (
+  | Some (Store.StorageList existing_list) -> (
       match existing_list with
       | first :: rest as l -> (
           match count with
           | 1 ->
-              Store.set key (Store.List rest) Lifetime.Forever;
+              Store.set key (Store.StorageList rest) Lifetime.Forever;
               Resp.BulkString first
           | _ ->
               let count = Int.min (List.length l) count in
@@ -77,15 +79,17 @@ let lpop key count =
               let new_list =
                 List.sub ~pos:count ~len:(List.length l - count) l
               in
-              Store.set key (Store.List new_list) Lifetime.Forever;
+              Store.set key (Store.StorageList new_list) Lifetime.Forever;
               Resp.RespList
                 (List.map ~f:(fun str -> Resp.BulkString str) result))
       | _ -> Resp.Null)
   | _ -> Resp.Null
 
-let blpop key _timeout =
-  let item = lpop key 1 in
-  Resp.RespList [ Resp.BulkString key; item ]
+let blpop key timeout =
+  let item = Store.pop_or_wait key timeout in
+  match item with
+  | Some v -> Resp.RespList [ Resp.BulkString key; Resp.from_store v ]
+  | None -> Resp.NullArray
 
 let echo message = Resp.BulkString message
 
