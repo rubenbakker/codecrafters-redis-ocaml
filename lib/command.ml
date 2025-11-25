@@ -35,21 +35,6 @@ let normalize_lrange len from_idx to_idx =
     Some (from_idx, len)
   else None
 
-let%test_unit "lrange positive idx" =
-  [%test_eq: (int * int) option] (normalize_lrange 5 1 3) (Some (1, 3))
-
-let%test_unit "lrange positive from_idx larger than list" =
-  [%test_eq: (int * int) option] (normalize_lrange 5 1 7) (Some (1, 4))
-
-let%test_unit "lrange positive from_idx larger than link" =
-  [%test_eq: (int * int) option] (normalize_lrange 5 8 9) None
-
-let%test_unit "lrange negative from_idx and to_idx" =
-  [%test_eq: (int * int) option] (normalize_lrange 5 (-2) (-1)) (Some (3, 2))
-
-let%test_unit "lrange negative from_idx and to_idx" =
-  [%test_eq: (int * int) option] (normalize_lrange 5 (-7) 99) (Some (0, 5))
-
 let lrange key from_idx to_idx =
   let from_idx = Int.of_string from_idx in
   let to_idx = Int.of_string to_idx in
@@ -77,3 +62,18 @@ let process str =
   | "lrange", [ key; from_idx; to_idx ] -> lrange key from_idx to_idx
   | "echo", [ message ] -> echo message
   | _ -> Resp.Null
+
+let%test_unit "lrange positive idx" =
+  [%test_eq: (int * int) option] (normalize_lrange 5 1 3) (Some (1, 3))
+
+let%test_unit "lrange positive from_idx larger than list" =
+  [%test_eq: (int * int) option] (normalize_lrange 5 1 7) (Some (1, 4))
+
+let%test_unit "lrange positive from_idx larger than link" =
+  [%test_eq: (int * int) option] (normalize_lrange 5 8 9) None
+
+let%test_unit "lrange negative from_idx and to_idx" =
+  [%test_eq: (int * int) option] (normalize_lrange 5 (-2) (-1)) (Some (3, 2))
+
+let%test_unit "lrange negative from_idx and to_idx" =
+  [%test_eq: (int * int) option] (normalize_lrange 5 (-7) 99) (Some (0, 5))
