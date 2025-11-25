@@ -65,7 +65,7 @@ let rec to_string item =
   | BulkString str -> Printf.sprintf "$%d\r\n%s\r\n" (String.length str) str
   | RespList list ->
       Printf.sprintf "*%d\r\n%s" (List.length list)
-        (String.concat ~sep:"" (List.map list ~f:(fun x -> to_string x)))
+        (String.concat ~sep:"" (List.map ~f:(fun x -> to_string x) list))
   | Null -> null_string
 
 let from_store item =

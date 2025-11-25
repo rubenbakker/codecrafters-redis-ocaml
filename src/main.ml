@@ -32,9 +32,8 @@ let process_command str =
           let len = to_idx - pos + 1 in
           Stdlib.Printf.eprintf "pos: %d, to_idx: %d, len: %d" pos to_idx len;
           Resp.RespList
-            (List.map
-               ~f:(fun str -> Resp.BulkString str)
-               (List.sub ~pos ~len l))
+            (l |> List.sub ~pos ~len
+            |> List.map ~f:(fun str -> Resp.BulkString str))
       | _ -> Resp.RespList [])
   | "echo", [ message ] -> Resp.BulkString message
   | _ -> Resp.Null
