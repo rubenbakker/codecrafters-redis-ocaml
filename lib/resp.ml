@@ -114,7 +114,7 @@ let%test_unit "to_string simple string" =
   [%test_eq: string] (to_string (SimpleString "Hey")) "+Hey\r\n"
 
 let%test_unit "to_string integer" =
-  [%test_eq: string] (to_string (Integer 55)) ":+55\r\n"
+  [%test_eq: string] (to_string (Integer 55)) ":55\r\n"
 
 let%test_unit "from_string list" =
   [%test_eq: t]

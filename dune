@@ -8,7 +8,7 @@
 (library
  (name lib)
  (libraries base unix threads str)
- (modules resp lifetime store)
+ (modules resp lifetime store command)
  (inline_tests)
  (preprocess
   (pps ppx_inline_test ppx_assert ppx_compare ppx_sexp_conv)))
