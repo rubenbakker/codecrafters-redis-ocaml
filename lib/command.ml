@@ -75,7 +75,7 @@ let lpop key count =
               let count = Int.min (List.length l) count in
               let result = List.take l count in
               let new_list =
-                List.sub ~pos:count ~len:(List.length l - count + 1) l
+                List.sub ~pos:count ~len:(List.length l - count) l
               in
               Store.set key (Store.List new_list) Lifetime.Forever;
               Resp.RespList
