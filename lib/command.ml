@@ -62,13 +62,24 @@ let llen key =
   | Some (Store.List l) -> Resp.Integer (List.length l)
   | _ -> Resp.Integer 0
 
-let lpop key =
+let lpop key count =
   match Store.get key with
   | Some (Store.List existing_list) -> (
       match existing_list with
-      | first :: rest ->
-          Store.set key (Store.List rest) Lifetime.Forever;
-          Resp.BulkString first
+      | first :: rest as l -> (
+          match count with
+          | 1 ->
+              Store.set key (Store.List rest) Lifetime.Forever;
+              Resp.BulkString first
+          | _ ->
+              let count = Int.min (List.length l) count in
+              let result = List.take l count in
+              let new_list =
+                List.sub ~pos:count ~len:(List.length l - count + 1) l
+              in
+              Store.set key (Store.List new_list) Lifetime.Forever;
+              Resp.RespList
+                (List.map ~f:(fun str -> Resp.BulkString str) result))
       | _ -> Resp.Null)
   | _ -> Resp.Null
 
@@ -86,7 +97,8 @@ let process str =
   | "lpush", key :: rest -> lpush key rest
   | "lrange", [ key; from_idx; to_idx ] -> lrange key from_idx to_idx
   | "llen", [ key ] -> llen key
-  | "lpop", [ key ] -> lpop key
+  | "lpop", [ key ] -> lpop key 1
+  | "lpop", [ key; count ] -> lpop key (Int.of_string count)
   | "echo", [ message ] -> echo message
   | _ -> Resp.Null
 
