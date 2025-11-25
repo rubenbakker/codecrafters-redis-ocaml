@@ -83,6 +83,10 @@ let lpop key count =
       | _ -> Resp.Null)
   | _ -> Resp.Null
 
+let blpop key _timeout =
+  let item = lpop key 1 in
+  Resp.RespList [ Resp.BulkString key; item ]
+
 let echo message = Resp.BulkString message
 
 let process str =
@@ -99,6 +103,7 @@ let process str =
   | "llen", [ key ] -> llen key
   | "lpop", [ key ] -> lpop key 1
   | "lpop", [ key; count ] -> lpop key (Int.of_string count)
+  | "blpop", [ key; timeout ] -> blpop key (Int.of_string timeout)
   | "echo", [ message ] -> echo message
   | _ -> Resp.Null
 
