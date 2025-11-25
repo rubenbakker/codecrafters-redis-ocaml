@@ -57,6 +57,11 @@ let lrange key from_idx to_idx =
       | None -> RespList [])
   | _ -> Resp.RespList []
 
+let llen key =
+  match Store.get key with
+  | Some (Store.List l) -> Resp.Integer (List.length l)
+  | _ -> Resp.Integer 0
+
 let echo message = Resp.BulkString message
 
 let process str =
@@ -70,6 +75,7 @@ let process str =
   | "rpush", key :: rest -> rpush key rest
   | "lpush", key :: rest -> lpush key rest
   | "lrange", [ key; from_idx; to_idx ] -> lrange key from_idx to_idx
+  | "llen", [ key ] -> llen key
   | "echo", [ message ] -> echo message
   | _ -> Resp.Null
 
