@@ -23,6 +23,19 @@ let process_command str =
       in
       Store.set key (Store.List new_list) Lifetime.Forever;
       Resp.Integer (List.length new_list)
+  | "lrange", [ key; from_idx; to_idx ] -> (
+      let pos = Int.of_string from_idx in
+      let to_idx = Int.of_string to_idx in
+      match Store.get key with
+      | Some (Store.List l) when List.length l > pos ->
+          let to_idx = Int.min to_idx (List.length l - 1) in
+          let len = to_idx - pos + 1 in
+          Stdlib.Printf.eprintf "pos: %d, to_idx: %d, len: %d" pos to_idx len;
+          Resp.RespList
+            (List.map
+               ~f:(fun str -> Resp.BulkString str)
+               (List.sub ~pos ~len l))
+      | _ -> Resp.RespList [])
   | "echo", [ message ] -> Resp.BulkString message
   | _ -> Resp.Null
 
