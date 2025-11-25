@@ -24,6 +24,15 @@ let rpush key rest =
   Store.set key (Store.List new_list) Lifetime.Forever;
   Resp.Integer (List.length new_list)
 
+let lpush key rest =
+  let values = List.rev rest in
+  let exiting_list = Store.get key in
+  let new_list =
+    match exiting_list with Some (Store.List l) -> values @ l | _ -> values
+  in
+  Store.set key (Store.List new_list) Lifetime.Forever;
+  Resp.Integer (List.length new_list)
+
 let normalize_lrange len from_idx to_idx =
   let from_idx =
     if from_idx >= 0 then from_idx else Int.max (len + from_idx) 0
@@ -59,6 +68,7 @@ let process str =
       set ~expiry:(Some (expiry_type, expiry_value)) key value
   | "get", [ key ] -> get key
   | "rpush", key :: rest -> rpush key rest
+  | "lpush", key :: rest -> lpush key rest
   | "lrange", [ key; from_idx; to_idx ] -> lrange key from_idx to_idx
   | "echo", [ message ] -> echo message
   | _ -> Resp.Null
