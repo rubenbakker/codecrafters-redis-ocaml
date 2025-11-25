@@ -24,15 +24,43 @@ let rpush key rest =
   Store.set key (Store.List new_list) Lifetime.Forever;
   Resp.Integer (List.length new_list)
 
+let normalize_lrange len from_idx to_idx =
+  let from_idx =
+    if from_idx >= 0 then from_idx else Int.max (len + from_idx) 0
+  in
+  let to_idx = if to_idx >= 0 then to_idx else Int.max (len + to_idx) 0 in
+  if from_idx >= 0 && from_idx < len then
+    let to_idx = Int.min to_idx (len - 1) in
+    let len = to_idx - from_idx + 1 in
+    Some (from_idx, len)
+  else None
+
+let%test_unit "lrange positive idx" =
+  [%test_eq: (int * int) option] (normalize_lrange 5 1 3) (Some (1, 3))
+
+let%test_unit "lrange positive from_idx larger than list" =
+  [%test_eq: (int * int) option] (normalize_lrange 5 1 7) (Some (1, 4))
+
+let%test_unit "lrange positive from_idx larger than link" =
+  [%test_eq: (int * int) option] (normalize_lrange 5 8 9) None
+
+let%test_unit "lrange negative from_idx and to_idx" =
+  [%test_eq: (int * int) option] (normalize_lrange 5 (-2) (-1)) (Some (3, 2))
+
+let%test_unit "lrange negative from_idx and to_idx" =
+  [%test_eq: (int * int) option] (normalize_lrange 5 (-7) 99) (Some (0, 5))
+
 let lrange key from_idx to_idx =
-  let pos = Int.of_string from_idx in
+  let from_idx = Int.of_string from_idx in
   let to_idx = Int.of_string to_idx in
   match Store.get key with
-  | Some (Store.List l) when List.length l > pos ->
-      let to_idx = Int.min to_idx (List.length l - 1) in
-      let len = to_idx - pos + 1 in
-      Resp.RespList
-        (l |> List.sub ~pos ~len |> List.map ~f:(fun str -> Resp.BulkString str))
+  | Some (Store.List l) -> (
+      match normalize_lrange (List.length l) from_idx to_idx with
+      | Some (pos, len) ->
+          Resp.RespList
+            (l |> List.sub ~pos ~len
+            |> List.map ~f:(fun str -> Resp.BulkString str))
+      | None -> RespList [])
   | _ -> Resp.RespList []
 
 let echo message = Resp.BulkString message
