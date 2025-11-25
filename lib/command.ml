@@ -62,6 +62,16 @@ let llen key =
   | Some (Store.List l) -> Resp.Integer (List.length l)
   | _ -> Resp.Integer 0
 
+let lpop key =
+  match Store.get key with
+  | Some (Store.List existing_list) -> (
+      match existing_list with
+      | first :: rest ->
+          Store.set key (Store.List rest) Lifetime.Forever;
+          Resp.BulkString first
+      | _ -> Resp.Null)
+  | _ -> Resp.Null
+
 let echo message = Resp.BulkString message
 
 let process str =
@@ -76,6 +86,7 @@ let process str =
   | "lpush", key :: rest -> lpush key rest
   | "lrange", [ key; from_idx; to_idx ] -> lrange key from_idx to_idx
   | "llen", [ key ] -> llen key
+  | "lpop", [ key ] -> lpop key
   | "echo", [ message ] -> echo message
   | _ -> Resp.Null
 
