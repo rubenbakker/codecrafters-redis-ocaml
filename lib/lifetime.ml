@@ -16,3 +16,9 @@ let create_expiry expiry_type expiry_value =
     | _ -> 0
   in
   Expires expiry_value
+
+let has_expired current_time lifetime =
+  match lifetime with Forever -> false | Expires time -> time < current_time
+
+let create_expiry_with_ms millis = Expires millis
+let create_expiry_with_s seconds = create_expiry_with_ms (seconds * 1000)

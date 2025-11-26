@@ -17,23 +17,12 @@ let get key =
   match value with None -> Resp.Null | Some v -> Resp.from_store v
 
 let rpush key rest =
-  let exiting_list = Store.get key in
-  let new_list =
-    match exiting_list with Some (Store.StorageList l) -> l @ rest | _ -> rest
-  in
-  Store.set key (Store.StorageList new_list) Lifetime.Forever;
-  Resp.Integer (List.length new_list)
+  let list_count = Store.rpush key rest in
+  Resp.Integer list_count
 
 let lpush key rest =
-  let values = List.rev rest in
-  let exiting_list = Store.get key in
-  let new_list =
-    match exiting_list with
-    | Some (Store.StorageList l) -> values @ l
-    | _ -> values
-  in
-  Store.set key (Store.StorageList new_list) Lifetime.Forever;
-  Resp.Integer (List.length new_list)
+  let list_count = Store.rpush key rest in
+  Resp.Integer list_count
 
 let normalize_lrange len from_idx to_idx =
   let from_idx =
