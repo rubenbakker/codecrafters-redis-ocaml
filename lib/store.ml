@@ -146,7 +146,12 @@ let expire_listeners () =
           Queue.filter queue ~f:(fun listener ->
               Lifetime.has_expired current_time listener.lifetime)
           |> Queue.iter ~f:(fun listener ->
-                 Stdlib.Condition.signal listener.condition))
+                 Stdlib.Condition.signal listener.condition);
+          let new_queue =
+            Queue.filter queue ~f:(fun listener ->
+                !Lifetime.has_expired current_time listener.lifetime)
+          in
+          StringMap.add new_queue !listeners)
         !listeners)
 
 let start_gc () = Thread.create remove_expired_entries_loop ()
