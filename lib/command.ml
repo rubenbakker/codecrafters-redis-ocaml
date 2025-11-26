@@ -21,7 +21,7 @@ let rpush key rest =
   Resp.Integer list_count
 
 let lpush key rest =
-  let list_count = Store.rpush key rest in
+  let list_count = Store.lpush key rest in
   Resp.Integer list_count
 
 let normalize_lrange len from_idx to_idx =
