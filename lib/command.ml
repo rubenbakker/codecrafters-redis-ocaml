@@ -85,6 +85,15 @@ let blpop key timeout =
   | Some v -> Resp.RespList [ Resp.BulkString key; Resp.from_store v ]
   | None -> Resp.NullArray
 
+let type_cmd key =
+  (match Store.get key with
+    | None -> "none"
+    | Some v -> (
+        match v with
+        | Store.StorageList _ -> "list"
+        | Store.StorageString _ -> "string"))
+  |> fun v -> Resp.SimpleString v
+
 let echo message = Resp.BulkString message
 
 let process str =
@@ -102,6 +111,7 @@ let process str =
   | "lpop", [ key ] -> lpop key 1
   | "lpop", [ key; count ] -> lpop key (Int.of_string count)
   | "blpop", [ key; timeout ] -> blpop key timeout
+  | "type", [ key ] -> type_cmd key
   | "echo", [ message ] -> echo message
   | _ -> Resp.Null
 
