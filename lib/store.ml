@@ -12,7 +12,7 @@ let lock () = Stdlib.Mutex.lock repo_lock
 type listener = {
   lock : Stdlib.Mutex.t;
   condition : Stdlib.Condition.t;
-  _lifetime : Lifetime.t;
+  lifetime : Lifetime.t;
   mutable result : t option;
 }
 
@@ -32,11 +32,11 @@ let notify_listeners key values =
       let count = Int.min (Queue.length queue) (List.length values) in
       List.take values count
       |> List.iter ~f:(fun value ->
-             match Queue.dequeue queue with
-             | None -> ()
-             | Some listener ->
-                 listener.result <- Some (StorageString value);
-                 Stdlib.Condition.signal listener.condition)
+          match Queue.dequeue queue with
+          | None -> ()
+          | Some listener ->
+              listener.result <- Some (StorageString value);
+              Stdlib.Condition.signal listener.condition)
 
 let set_no_lock key value expires =
   repo := StringMap.add key (value, Lifetime.to_abolute_expires expires) !repo
@@ -97,14 +97,12 @@ let pop_or_wait key timeout =
             let lock = Stdlib.Mutex.create () in
             let lifetime =
               match timeout with
-              | 0 -> Lifetime.Forever
+              | 0.0 -> Lifetime.Forever
               | _ ->
                   Lifetime.create_expiry_with_s timeout
                   |> Lifetime.to_abolute_expires
             in
-            let listener =
-              { lock; condition; _lifetime = lifetime; result = None }
-            in
+            let listener = { lock; condition; lifetime; result = None } in
             Stdlib.Mutex.lock lock;
             let queue =
               match StringMap.find_opt key !listeners with
@@ -140,22 +138,25 @@ let rec remove_expired_entries_loop () =
   Thread.delay 10.0;
   remove_expired_entries_loop ()
 
-let expire_listeners () =
-  protect (fun () ->
-      let _current_time = Lifetime.now () in
-      StringMap.iter
-        (fun _ _queue ->
-          (* Queue.filter queue ~f:(fun listener -> *)
-          (*     Lifetime.has_expired current_time listener.lifetime) *)
-          (* |> Queue.iter ~f:(fun listener -> *)
-          (*        Stdlib.Condition.signal listener.condition); *)
-          (* let new_queue = *)
-          (*   Queue.filter queue ~f:(fun listener -> *)
-          (*       !(Lifetime.has_expired current_time listener.lifetime) *)
-          (* in *)
-          (* StringMap.add new_queue !listeners) *)
-          ())
-        !listeners)
+let rec expire_listeners () =
+  let _ =
+    protect (fun () ->
+        let current_time = Lifetime.now () in
+        StringMap.iter
+          (fun key queue ->
+            Queue.filter queue ~f:(fun listener ->
+                Lifetime.has_expired current_time listener.lifetime)
+            |> Queue.iter ~f:(fun listener ->
+                Stdlib.Condition.signal listener.condition);
+            let new_queue =
+              Queue.filter queue ~f:(fun listener ->
+                  not (Lifetime.has_expired current_time listener.lifetime))
+            in
+            listeners := StringMap.add key new_queue !listeners)
+          !listeners)
+  in
+  Thread.delay 0.1;
+  expire_listeners ()
 
 let start_gc () = Thread.create remove_expired_entries_loop ()
 let start_expire_listeners () = Thread.create expire_listeners ()

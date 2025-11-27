@@ -36,6 +36,7 @@ let () =
   bind server_socket (ADDR_INET (inet_addr_of_string "127.0.0.1", 6379));
   listen server_socket 10;
   let _ = Store.start_gc () in
+  let _ = Store.start_expire_listeners () in
   try accept_loop server_socket []
   with e ->
     close server_socket;

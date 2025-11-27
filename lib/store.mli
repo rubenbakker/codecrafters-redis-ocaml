@@ -4,6 +4,6 @@ val get : string -> t option
 val set : string -> t -> Lifetime.t -> unit
 val rpush : string -> string list -> int
 val lpush : string -> string list -> int
-val pop_or_wait : string -> int -> t option
+val pop_or_wait : string -> float -> t option
 val start_gc : unit -> Thread.t
 val start_expire_listeners : unit -> Thread.t

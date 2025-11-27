@@ -21,4 +21,6 @@ let has_expired current_time lifetime =
   match lifetime with Forever -> false | Expires time -> time < current_time
 
 let create_expiry_with_ms millis = Expires millis
-let create_expiry_with_s seconds = create_expiry_with_ms (seconds * 1000)
+
+let create_expiry_with_s seconds =
+  create_expiry_with_ms (Int.of_float Float.O.(seconds * 1000.0))

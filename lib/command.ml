@@ -75,6 +75,11 @@ let lpop key count =
   | _ -> Resp.Null
 
 let blpop key timeout =
+  let timeout =
+    match Float.of_string_opt timeout with
+    | Some v -> v
+    | None -> Int.of_string timeout |> Float.of_int
+  in
   let item = Store.pop_or_wait key timeout in
   match item with
   | Some v -> Resp.RespList [ Resp.BulkString key; Resp.from_store v ]
@@ -96,7 +101,7 @@ let process str =
   | "llen", [ key ] -> llen key
   | "lpop", [ key ] -> lpop key 1
   | "lpop", [ key; count ] -> lpop key (Int.of_string count)
-  | "blpop", [ key; timeout ] -> blpop key (Int.of_string timeout)
+  | "blpop", [ key; timeout ] -> blpop key timeout
   | "echo", [ message ] -> echo message
   | _ -> Resp.Null
 
