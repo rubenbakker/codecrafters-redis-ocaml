@@ -7,6 +7,7 @@ type t =
   | Integer of int
   | Null
   | NullArray
+  | RespError of string
 [@@deriving compare, equal, sexp]
 
 let null_string = "$-1\r\n"
@@ -69,6 +70,7 @@ let rec to_string (item : t) : string =
         (String.concat ~sep:"" (List.map ~f:(fun x -> to_string x) list))
   | Null -> null_string
   | NullArray -> "*-1\r\n"
+  | RespError error -> Printf.sprintf "-%s\r\n" error
 
 let from_store (item : Store.t) : t =
   match item with
@@ -84,6 +86,7 @@ let arg arg =
   | RespList _ -> ""
   | NullArray -> ""
   | Null -> ""
+  | RespError error -> error
 
 let command (str : string) : string * string list =
   let parsed_command = from_string str 0 in
@@ -119,6 +122,9 @@ let%test_unit "to_string simple string" =
 
 let%test_unit "to_string integer" =
   [%test_eq: string] (to_string (Integer 55)) ":55\r\n"
+
+let%test_unit "to_string error" =
+  [%test_eq: string] (to_string (RespError "Error 77")) "-Error 77\r\n"
 
 let%test_unit "from_string list" =
   [%test_eq: t]

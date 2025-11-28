@@ -100,8 +100,9 @@ let type_cmd (key : string) : Resp.t =
 let echo (message : string) : Resp.t = Resp.BulkString message
 
 let xadd (key : string) (id : string) (rest : string list) : Resp.t =
-  let _ = Store.xadd key id rest in
-  Resp.BulkString id
+  match Store.xadd key id rest with
+  | Ok _ -> Resp.BulkString id
+  | Error error -> Resp.RespError error
 
 let process (str : string) : Resp.t =
   let command = Resp.command str in

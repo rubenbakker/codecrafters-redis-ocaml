@@ -5,6 +5,7 @@ type t =
   | Integer of int
   | Null
   | NullArray
+  | RespError of string
 
 val from_string : string -> int -> t
 val to_string : t -> string

@@ -1,8 +1,14 @@
 open Base
 module StringMap = Stdlib.Map.Make (String)
 
+
+type stream_id = {
+  millis: int;
+  sequence: int;
+}
+
 type stream_entry = {
-  id: string;
+  id: stream_id;
   data: (string * string) list;
 }
 (** storage value type *)
@@ -35,6 +41,25 @@ type listener = {
 let listeners : listener Queue.t StringMap.t ref = ref StringMap.empty
 
 type pop_or_wait_result = WaitResult of listener | ValueResult of t
+
+let parse_stream_id (id : string) : (stream_id, string) Result.t =
+  match String.split ~on:'-' id with
+  | millis :: sequence :: [] -> Ok { millis = (Int.of_string millis); sequence = (Int.of_string sequence); }
+  | _ -> Error "Not a valid stream id"
+
+let validate_stream_entry_id id reference_id =
+  if id.millis = 0 && id.sequence = 0 then
+    Error "ERR The ID specified in XADD must be greater than 0-0"
+  else 
+    if id.millis > reference_id.millis then
+      Ok id  
+    else 
+    (if id.millis = reference_id.millis then
+      if id.sequence > reference_id.sequence  then
+        Ok id
+      else 
+        Error "ERR The ID specified in XADD is equal or smaller than the target stream top item"
+    else Error "ERR The ID specified in XADD is equal or smaller than the target stream top item")
 
 let protect fn =
   Stdlib.Fun.protect ~finally:unlock (fun () ->
@@ -139,24 +164,21 @@ let pop_or_wait (key : string) (timeout : float) : t option =
       Stdlib.Condition.wait listener.condition listener.lock;
       protect (fun () -> listener.result)
 
-let rec make_pairs (input: 'a list) : ('a * 'a) list =
-  match input with
-  | [] -> []
-  | _ :: [] -> []
-  | hd :: second :: tl -> (hd, second) :: make_pairs tl
+let add_to_stream (new_entry: stream_entry) (stream : stream_entry list) : (stream_entry list, string) Result.t = 
+  let last_entry_id = match List.last stream with
+    | Some entry -> entry.id
+    | None -> { millis = 0; sequence = 0} in
+  match validate_stream_entry_id new_entry.id last_entry_id with
+  | Ok _ -> Ok (stream @ [new_entry])
+  | Error error -> Error error
 
-let xadd (key: string) (id : string ) (rest: string list) : string = 
-  let data = make_pairs rest in
-    let exiting_list = get_no_lock key in
-  let stream_entry = {id; data} in
-  let new_stream =
-    match exiting_list with
-    | Some (StorageStream s) -> s @ [stream_entry] 
-    | _ -> [stream_entry]
-    in
-    set_no_lock key (StorageStream new_stream) Lifetime.Forever;
-    (* notify_listeners key new_stream;*)
-    id
+let xadd (key: string) (id : string ) (rest: string list) : (stream_entry list, string ) Result.t = 
+  let stream = match get_no_lock key with | Some (StorageStream stream) -> stream | None -> [] | _ -> [] in
+  match parse_stream_id id with
+  | Ok id -> (match add_to_stream { id; data = Listutils.make_pairs rest} stream with
+      | Ok stream -> (set_no_lock key (StorageStream stream) Lifetime.Forever; Ok stream)
+      | Error err -> Error err)
+  | Error err -> Error err
 
 let rec remove_expired_entries_loop () : unit =
   protect (fun () ->
