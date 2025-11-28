@@ -1,14 +1,29 @@
 open Base
 module StringMap = Stdlib.Map.Make (String)
 
+type stream_entry = {
+  id: string;
+  data: (string * string) list;
+}
 (** storage value type *)
-type t = StorageString of string | StorageList of string list
+type t =
+  | StorageString of string
+  | StorageList of string list
+  | StorageStream of stream_entry list
 
+(** storage data stored as repo *)
 let repo : (t * Lifetime.t) StringMap.t ref = ref StringMap.empty
-let repo_lock = Stdlib.Mutex.create ()
-let unlock () = Stdlib.Mutex.unlock repo_lock
-let lock () = Stdlib.Mutex.lock repo_lock
 
+(** lock when accessing the repo *)
+let repo_lock = Stdlib.Mutex.create ()
+
+(** lock the repo for access *)
+let unlock () : unit = Stdlib.Mutex.unlock repo_lock
+
+(** unlock the repo after access *)
+let lock () : unit = Stdlib.Mutex.lock repo_lock
+
+(* Listener type to be notified when an element becomes available *)
 type listener = {
   lock : Stdlib.Mutex.t;
   condition : Stdlib.Condition.t;
@@ -16,6 +31,7 @@ type listener = {
   mutable result : t option;
 }
 
+(** module global storage for all listeners *)
 let listeners : listener Queue.t StringMap.t ref = ref StringMap.empty
 
 type pop_or_wait_result = WaitResult of listener | ValueResult of t
@@ -25,7 +41,7 @@ let protect fn =
       lock ();
       fn ())
 
-let notify_listeners key values =
+let notify_listeners (key : string) (values : string list) : unit =
   match StringMap.find_opt key !listeners with
   | None -> ()
   | Some queue ->
@@ -38,10 +54,10 @@ let notify_listeners key values =
               listener.result <- Some (StorageString value);
               Stdlib.Condition.signal listener.condition)
 
-let set_no_lock key value expires =
+let set_no_lock (key : string) (value : t) (expires : Lifetime.t) : unit =
   repo := StringMap.add key (value, Lifetime.to_abolute_expires expires) !repo
 
-let get_no_lock key =
+let get_no_lock (key : string) : t option =
   match StringMap.find_opt key !repo with
   | None -> None
   | Some (value, expiry) -> (
@@ -49,10 +65,12 @@ let get_no_lock key =
       | Forever -> Some value
       | Expires e -> if e >= Lifetime.now () then Some value else None)
 
-let set key value expires = protect (fun () -> set_no_lock key value expires)
-let get key = protect (fun () -> get_no_lock key)
+let set (key : string) (value : t) (expires : Lifetime.t) : unit =
+  protect (fun () -> set_no_lock key value expires)
 
-let rpush key values =
+let get (key : string) : t option = protect (fun () -> get_no_lock key)
+
+let rpush (key : string) (values : string list) : int =
   protect (fun () ->
       let exiting_list = get_no_lock key in
       let new_list =
@@ -64,7 +82,7 @@ let rpush key values =
       notify_listeners key new_list;
       List.length new_list)
 
-let lpush key rest =
+let lpush (key : string) (rest : string list) : int =
   protect (fun () ->
       let values = List.rev rest in
       let exiting_list = get_no_lock key in
@@ -77,7 +95,7 @@ let lpush key rest =
       notify_listeners key new_list;
       List.length new_list)
 
-let pop_value key =
+let pop_value (key : string) : t option =
   match get_no_lock key with
   | None -> None
   | Some value -> (
@@ -87,7 +105,7 @@ let pop_value key =
           Some (StorageString first)
       | _ -> None)
 
-let pop_or_wait key timeout =
+let pop_or_wait (key : string) (timeout : float) : t option =
   let outcome =
     protect (fun () ->
         match pop_value key with
@@ -121,7 +139,26 @@ let pop_or_wait key timeout =
       Stdlib.Condition.wait listener.condition listener.lock;
       protect (fun () -> listener.result)
 
-let rec remove_expired_entries_loop () =
+let rec make_pairs (input: 'a list) : ('a * 'a) list =
+  match input with
+  | [] -> []
+  | _ :: [] -> []
+  | hd :: second :: tl -> (hd, second) :: make_pairs tl
+
+let xadd (key: string) (id : string ) (rest: string list) : string = 
+  let data = make_pairs rest in
+    let exiting_list = get_no_lock key in
+  let stream_entry = {id; data} in
+  let new_stream =
+    match exiting_list with
+    | Some (StorageStream s) -> s @ [stream_entry] 
+    | _ -> [stream_entry]
+    in
+    set_no_lock key (StorageStream new_stream) Lifetime.Forever;
+    (* notify_listeners key new_stream;*)
+    id
+
+let rec remove_expired_entries_loop () : unit =
   protect (fun () ->
       let current_time = Lifetime.now () in
       let expired_entries =
@@ -138,7 +175,7 @@ let rec remove_expired_entries_loop () =
   Thread.delay 10.0;
   remove_expired_entries_loop ()
 
-let rec expire_listeners () =
+let rec expire_listeners () : unit =
   let _ =
     protect (fun () ->
         let current_time = Lifetime.now () in
@@ -158,5 +195,5 @@ let rec expire_listeners () =
   Thread.delay 0.1;
   expire_listeners ()
 
-let start_gc () = Thread.create remove_expired_entries_loop ()
-let start_expire_listeners () = Thread.create expire_listeners ()
+let start_gc () : Thread.t = Thread.create remove_expired_entries_loop ()
+let start_expire_listeners () : Thread.t = Thread.create expire_listeners ()

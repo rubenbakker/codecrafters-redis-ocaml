@@ -2,12 +2,12 @@ open Base
 
 type t = Forever | Expires of int
 
-let now () = Unix.gettimeofday () *. 1000.0 |> Int.of_float
+let now () : int = Unix.gettimeofday () *. 1000.0 |> Int.of_float
 
-let to_abolute_expires expires =
+let to_abolute_expires (expires : t) : t =
   match expires with Forever -> Forever | Expires ms -> Expires (now () + ms)
 
-let create_expiry expiry_type expiry_value =
+let create_expiry (expiry_type : string) (expiry_value : string) : t =
   let expiry_value = Int.of_string expiry_value in
   let expiry_value =
     match String.lowercase expiry_type with
@@ -17,10 +17,10 @@ let create_expiry expiry_type expiry_value =
   in
   Expires expiry_value
 
-let has_expired current_time lifetime =
+let has_expired (current_time : int) (lifetime : t) : bool =
   match lifetime with Forever -> false | Expires time -> time < current_time
 
-let create_expiry_with_ms millis = Expires millis
+let create_expiry_with_ms (millis : int) : t = Expires millis
 
-let create_expiry_with_s seconds =
+let create_expiry_with_s (seconds : float) : t =
   create_expiry_with_ms (Int.of_float Float.O.(seconds * 1000.0))

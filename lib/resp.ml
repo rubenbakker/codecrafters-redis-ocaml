@@ -18,7 +18,7 @@ let simple_string_regex = Str.regexp "^\\+\\(.*\\)\r\n"
 let bulk_string_regex = Str.regexp "^\\$\\([0-9]+\\)\r\n\\(.*\\)\r\n"
 let list_regexp = Str.regexp "^\\*\\([0-9]+\\)\r\n"
 
-let rec from_string_internal str pos =
+let rec from_string_internal (str : string) (pos : int) : int * t =
   let list_result = Str.string_match list_regexp str pos in
   if list_result then (
     let prefix_length = String.length (Str.matched_group 0 str) in
@@ -52,11 +52,11 @@ let rec from_string_internal str pos =
             BulkString (Str.matched_group 2 str) )
         else (0, BulkString "")
 
-let from_string str pos =
+let from_string (str : string) (pos : int) : t =
   let _, item = from_string_internal str pos in
   item
 
-let rec to_string item =
+let rec to_string (item : t) : string =
   match item with
   | Integer integer_value ->
       Printf.sprintf ":%s%d\r\n"
@@ -70,10 +70,11 @@ let rec to_string item =
   | Null -> null_string
   | NullArray -> "*-1\r\n"
 
-let from_store item =
+let from_store (item : Store.t) : t =
   match item with
   | Store.StorageString str -> BulkString str
   | Store.StorageList l -> RespList (List.map ~f:(fun str -> BulkString str) l)
+  | Store.StorageStream _ -> SimpleString "OK"
 
 let arg arg =
   match arg with
@@ -84,16 +85,16 @@ let arg arg =
   | NullArray -> ""
   | Null -> ""
 
-let command str =
+let command (str : string) : string * string list =
   let parsed_command = from_string str 0 in
   match parsed_command with
   | RespList (BulkString command :: rest) ->
       (String.lowercase command, List.map ~f:arg rest)
   | _ -> raise InvalidData
 
-let to_simple_string str = SimpleString str |> to_string
-let to_bulk_string str = BulkString str |> to_string
-let to_integer_string value = Integer value |> to_string
+let to_simple_string (str : string) : string = SimpleString str |> to_string
+let to_bulk_string (str : string) : string = BulkString str |> to_string
+let to_integer_string (value : int) : string = Integer value |> to_string
 
 let%test_unit "from_string integer" =
   [%test_eq: t] (from_string ":+55\r\n" 0) (Integer 55)

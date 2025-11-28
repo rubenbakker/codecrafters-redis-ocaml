@@ -1,8 +1,9 @@
 open Base
 
-let process_ping () = Resp.SimpleString "PONG"
+let process_ping () : Resp.t = Resp.SimpleString "PONG"
 
-let set ~expiry key value =
+let set ~(expiry : (string * string) option) (key : string) (value : string) :
+    Resp.t =
   let expiry =
     match expiry with
     | Some (expiry_type, expiry_value) ->
@@ -12,19 +13,20 @@ let set ~expiry key value =
   Store.set key (Store.StorageString value) expiry;
   Resp.SimpleString "OK"
 
-let get key =
+let get (key : string) : Resp.t =
   let value = Store.get key in
   match value with None -> Resp.Null | Some v -> Resp.from_store v
 
-let rpush key rest =
+let rpush (key : string) (rest : string list) : Resp.t =
   let list_count = Store.rpush key rest in
   Resp.Integer list_count
 
-let lpush key rest =
+let lpush (key : string) (rest : string list) =
   let list_count = Store.lpush key rest in
   Resp.Integer list_count
 
-let normalize_lrange len from_idx to_idx =
+let normalize_lrange (len : int) (from_idx : int) (to_idx : int) :
+    (int * int) option =
   let from_idx =
     if from_idx >= 0 then from_idx else Int.max (len + from_idx) 0
   in
@@ -35,7 +37,7 @@ let normalize_lrange len from_idx to_idx =
     Some (from_idx, len)
   else None
 
-let lrange key from_idx to_idx =
+let lrange (key : string) (from_idx : string) (to_idx : string) : Resp.t =
   let from_idx = Int.of_string from_idx in
   let to_idx = Int.of_string to_idx in
   match Store.get key with
@@ -48,12 +50,12 @@ let lrange key from_idx to_idx =
       | None -> RespList [])
   | _ -> Resp.RespList []
 
-let llen key =
+let llen (key : string) : Resp.t =
   match Store.get key with
   | Some (Store.StorageList l) -> Resp.Integer (List.length l)
   | _ -> Resp.Integer 0
 
-let lpop key count =
+let lpop (key : string) (count : int) : Resp.t =
   match Store.get key with
   | Some (Store.StorageList existing_list) -> (
       match existing_list with
@@ -74,7 +76,7 @@ let lpop key count =
       | _ -> Resp.Null)
   | _ -> Resp.Null
 
-let blpop key timeout =
+let blpop (key : string) (timeout : string) : Resp.t =
   let timeout =
     match Float.of_string_opt timeout with
     | Some v -> v
@@ -85,18 +87,23 @@ let blpop key timeout =
   | Some v -> Resp.RespList [ Resp.BulkString key; Resp.from_store v ]
   | None -> Resp.NullArray
 
-let type_cmd key =
+let type_cmd (key : string) : Resp.t =
   (match Store.get key with
     | None -> "none"
     | Some v -> (
         match v with
         | Store.StorageList _ -> "list"
-        | Store.StorageString _ -> "string"))
+        | Store.StorageString _ -> "string"
+        | Store.StorageStream _ -> "stream"))
   |> fun v -> Resp.SimpleString v
 
-let echo message = Resp.BulkString message
+let echo (message : string) : Resp.t = Resp.BulkString message
 
-let process str =
+let xadd (key : string) (id : string) (rest : string list) : Resp.t =
+  let _ = Store.xadd key id rest in
+  Resp.BulkString id
+
+let process (str : string) : Resp.t =
   let command = Resp.command str in
   match command with
   | "ping", [] -> process_ping ()
@@ -113,6 +120,7 @@ let process str =
   | "blpop", [ key; timeout ] -> blpop key timeout
   | "type", [ key ] -> type_cmd key
   | "echo", [ message ] -> echo message
+  | "xadd", key :: id :: rest -> xadd key id rest
   | _ -> Resp.Null
 
 let%test_unit "lrange positive idx" =
