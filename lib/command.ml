@@ -111,9 +111,7 @@ let stream_to_resp (entries : Streams.entry_t list) : Resp.t =
         List.fold (Streams.get_entry_data entry) ~init:[]
           ~f:(fun (acc : Resp.t list) data_pair ->
             let key, value = data_pair in
-            acc
-            |> List.append [ Resp.BulkString key ]
-            |> List.append [ Resp.BulkString value ])
+            List.append acc [ Resp.BulkString key; Resp.BulkString value ])
       in
       Resp.RespList
         [

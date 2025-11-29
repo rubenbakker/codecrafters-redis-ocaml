@@ -1,4 +1,3 @@
-(** storage value type *)
 type t =
   | StorageString of string
   | StorageList of string list
