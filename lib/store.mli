@@ -16,5 +16,8 @@ val xadd :
   string list ->
   (string * Streams.entry_t list, string) Result.t
 
+val xrange :
+  string -> string -> string -> (Streams.entry_t list, string) Result.t
+
 val start_gc : unit -> Thread.t
 val start_expire_listeners : unit -> Thread.t

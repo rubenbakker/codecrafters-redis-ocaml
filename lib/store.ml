@@ -149,6 +149,16 @@ let xadd (key : string) (id : string) (rest : string list) :
       Ok (id, stream)
   | Error err -> Error err
 
+let xrange (key : string) (from_id : string) (to_id : string) :
+    (Streams.entry_t list, string) Result.t =
+  let stream =
+    match get_no_lock key with
+    | Some (StorageStream stream) -> stream
+    | None -> []
+    | _ -> []
+  in
+  Ok (Streams.xrange from_id to_id stream)
+
 let rec remove_expired_entries_loop () : unit =
   protect (fun () ->
       let current_time = Lifetime.now () in

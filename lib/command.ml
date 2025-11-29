@@ -104,6 +104,29 @@ let xadd (key : string) (id : string) (rest : string list) : Resp.t =
   | Ok (id, _) -> Resp.BulkString id
   | Error error -> Resp.RespError error
 
+let stream_to_resp (entries : Streams.entry_t list) : Resp.t =
+  entries
+  |> List.map ~f:(fun entry ->
+      let (data : Resp.t list) =
+        List.fold (Streams.get_entry_data entry) ~init:[]
+          ~f:(fun (acc : Resp.t list) data_pair ->
+            let key, value = data_pair in
+            acc
+            |> List.append [ Resp.BulkString key ]
+            |> List.append [ Resp.BulkString value ])
+      in
+      Resp.RespList
+        [
+          Resp.BulkString (Streams.id_to_string (Streams.get_entry_id entry));
+          Resp.RespList data;
+        ])
+  |> fun l -> Resp.RespList l
+
+let xrange (key : string) (from_id : string) (to_id : string) : Resp.t =
+  match Store.xrange key from_id to_id with
+  | Ok entries -> stream_to_resp entries
+  | Error err -> Resp.RespError err
+
 let process (str : string) : Resp.t =
   let command = Resp.command str in
   match command with
@@ -122,6 +145,7 @@ let process (str : string) : Resp.t =
   | "type", [ key ] -> type_cmd key
   | "echo", [ message ] -> echo message
   | "xadd", key :: id :: rest -> xadd key id rest
+  | "xrange", [ key; from_id; to_id ] -> xrange key from_id to_id
   | _ -> Resp.Null
 
 let%test_unit "lrange positive idx" =
