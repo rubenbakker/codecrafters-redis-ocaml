@@ -101,7 +101,7 @@ let echo (message : string) : Resp.t = Resp.BulkString message
 
 let xadd (key : string) (id : string) (rest : string list) : Resp.t =
   match Store.xadd key id rest with
-  | Ok _ -> Resp.BulkString id
+  | Ok (id, _) -> Resp.BulkString id
   | Error error -> Resp.RespError error
 
 let process (str : string) : Resp.t =
