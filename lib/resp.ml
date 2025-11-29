@@ -72,12 +72,6 @@ let rec to_string (item : t) : string =
   | NullArray -> "*-1\r\n"
   | RespError error -> Printf.sprintf "-%s\r\n" error
 
-let from_store (item : Store.t) : t =
-  match item with
-  | Store.StorageString str -> BulkString str
-  | Store.StorageList l -> RespList (List.map ~f:(fun str -> BulkString str) l)
-  | Store.StorageStream _ -> SimpleString "OK"
-
 let arg arg =
   match arg with
   | Integer integer -> Int.to_string integer

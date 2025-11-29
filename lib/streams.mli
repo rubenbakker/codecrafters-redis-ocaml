@@ -13,5 +13,4 @@ val add_entry_to_stream :
 
 val id_to_string : id_t -> string
 val xrange : string -> string -> entry_t list -> entry_t list
-val get_entry_id : entry_t -> id_t
-val get_entry_data : entry_t -> (string * string) list
+val entries_to_resp : entry_t list -> Resp.t

@@ -74,6 +74,18 @@ let add_entry_to_stream (id : string) (data : (string * string) list)
       | Error error -> Error error)
   | Error error -> Error error
 
+let entries_to_resp (entries : entry_t list) : Resp.t =
+  entries
+  |> List.map ~f:(fun entry ->
+      let (data : Resp.t list) =
+        List.fold entry.data ~init:[] ~f:(fun (acc : Resp.t list) data_pair ->
+            let key, value = data_pair in
+            List.append acc [ Resp.BulkString key; Resp.BulkString value ])
+      in
+      Resp.RespList
+        [ Resp.BulkString (id_to_string entry.id); Resp.RespList data ])
+  |> fun l -> Resp.RespList l
+
 let xrange (from_id : string) (to_id : string) (stream : entry_t list) :
     entry_t list =
   let from_id = parse_xrange_id from_id FromId in
@@ -81,6 +93,3 @@ let xrange (from_id : string) (to_id : string) (stream : entry_t list) :
   stream
   |> List.filter ~f:(fun entry ->
       compare_id_t entry.id from_id >= 0 && compare_id_t entry.id to_id <= 0)
-
-let get_entry_id (entry : entry_t) : id_t = entry.id
-let get_entry_data (entry : entry_t) : (string * string) list = entry.data

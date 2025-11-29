@@ -13,9 +13,16 @@ let set ~(expiry : (string * string) option) (key : string) (value : string) :
   Store.set key (Store.StorageString value) expiry;
   Resp.SimpleString "OK"
 
+let resp_from_store (item : Store.t) : Resp.t =
+  match item with
+  | Store.StorageString str -> Resp.BulkString str
+  | Store.StorageList l ->
+      Resp.RespList (List.map ~f:(fun str -> Resp.BulkString str) l)
+  | Store.StorageStream _ -> Resp.SimpleString "OK"
+
 let get (key : string) : Resp.t =
   let value = Store.get key in
-  match value with None -> Resp.Null | Some v -> Resp.from_store v
+  match value with None -> Resp.Null | Some v -> resp_from_store v
 
 let rpush (key : string) (rest : string list) : Resp.t =
   let list_count = Store.rpush key rest in
@@ -84,7 +91,7 @@ let blpop (key : string) (timeout : string) : Resp.t =
   in
   let item = Store.pop_or_wait key timeout in
   match item with
-  | Some v -> Resp.RespList [ Resp.BulkString key; Resp.from_store v ]
+  | Some v -> Resp.RespList [ Resp.BulkString key; resp_from_store v ]
   | None -> Resp.NullArray
 
 let type_cmd (key : string) : Resp.t =
@@ -104,25 +111,9 @@ let xadd (key : string) (id : string) (rest : string list) : Resp.t =
   | Ok (id, _) -> Resp.BulkString id
   | Error error -> Resp.RespError error
 
-let stream_to_resp (entries : Streams.entry_t list) : Resp.t =
-  entries
-  |> List.map ~f:(fun entry ->
-      let (data : Resp.t list) =
-        List.fold (Streams.get_entry_data entry) ~init:[]
-          ~f:(fun (acc : Resp.t list) data_pair ->
-            let key, value = data_pair in
-            List.append acc [ Resp.BulkString key; Resp.BulkString value ])
-      in
-      Resp.RespList
-        [
-          Resp.BulkString (Streams.id_to_string (Streams.get_entry_id entry));
-          Resp.RespList data;
-        ])
-  |> fun l -> Resp.RespList l
-
 let xrange (key : string) (from_id : string) (to_id : string) : Resp.t =
   match Store.xrange key from_id to_id with
-  | Ok entries -> stream_to_resp entries
+  | Ok entries -> Streams.entries_to_resp entries
   | Error err -> Resp.RespError err
 
 let process (str : string) : Resp.t =

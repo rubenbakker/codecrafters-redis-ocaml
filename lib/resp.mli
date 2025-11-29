@@ -14,4 +14,3 @@ val to_bulk_string : string -> string
 val to_simple_string : string -> string
 val to_integer_string : int -> string
 val null_string : string
-val from_store : Store.t -> t
