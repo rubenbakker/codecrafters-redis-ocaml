@@ -7,16 +7,21 @@ let id_to_string id = Stdlib.Printf.sprintf "%d-%d" id.millis id.sequence
 
 let parse_entry_id (id : string) (last_entry_id : id_t) :
     (id_t, string) Result.t =
+  let new_sequence millis =
+    if last_entry_id.millis = millis then last_entry_id.sequence + 1 else 0
+  in
   match String.split ~on:'-' id with
   | [ millis; "*" ] ->
-      let new_sequence =
-        if last_entry_id.millis = Int.of_string millis then
-          last_entry_id.sequence + 1
-        else 0
-      in
-      Ok { millis = Int.of_string millis; sequence = new_sequence }
+      Ok
+        {
+          millis = Int.of_string millis;
+          sequence = new_sequence (Int.of_string millis);
+        }
   | [ millis; sequence ] ->
       Ok { millis = Int.of_string millis; sequence = Int.of_string sequence }
+  | [ "*" ] ->
+      let millis = Lifetime.now () in
+      Ok { millis; sequence = new_sequence millis }
   | _ -> Error "Not a valid stream id"
 
 let validate_entry_id (id : id_t) (reference_id : id_t) :
