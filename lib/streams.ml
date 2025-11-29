@@ -21,10 +21,8 @@ let parse_entry_id (id : string) (last_entry_id : id_t) :
 
 let validate_entry_id (id : id_t) (reference_id : id_t) :
     (id_t, string) Result.t =
-  if
-    id.millis = 0 && id.sequence = 0 && reference_id.millis = 0
-    && reference_id.sequence = 0
-  then Error "ERR The ID specified in XADD must be greater than 0-0"
+  if id.millis = 0 && id.sequence = 0 then
+    Error "ERR The ID specified in XADD must be greater than 0-0"
   else if id.millis > reference_id.millis then Ok id
   else if id.millis = reference_id.millis then
     if id.sequence > reference_id.sequence then Ok id
