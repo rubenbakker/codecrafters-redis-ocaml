@@ -63,6 +63,9 @@ let xadd (key : string) (id : string) (rest : string list) : Resp.t =
 let xrange (key : string) (from_id : string) (to_id : string) : Resp.t =
   Store.query_stream key (Streams.xrange from_id to_id)
 
+let xread (key : string) (from_id : string) : Resp.t =
+  Store.query_stream key (Streams.xread from_id)
+
 let process (str : string) : Resp.t =
   let command = Resp.command str in
   match command with
@@ -82,4 +85,5 @@ let process (str : string) : Resp.t =
   | "echo", [ message ] -> echo message
   | "xadd", key :: id :: rest -> xadd key id rest
   | "xrange", [ key; from_id; to_id ] -> xrange key from_id to_id
+  | "xread", [ _; key; from_id ] -> xread key from_id
   | _ -> Resp.Null
