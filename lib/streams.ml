@@ -62,7 +62,31 @@ let validate_entry_id (id : id_t) (reference_id : id_t) :
       "ERR The ID specified in XADD is equal or smaller than the target stream \
        top item"
 
-let xadd (id : string) (data : string list) (_listener_count : int)
+let entries_to_resp (entries : entry_t list) : Resp.t =
+  entries
+  |> List.map ~f:(fun entry ->
+         let (data : Resp.t list) =
+           List.fold entry.data ~init:[]
+             ~f:(fun (acc : Resp.t list) data_pair ->
+               let key, value = data_pair in
+               List.append acc [ Resp.BulkString key; Resp.BulkString value ])
+         in
+         Resp.RespList
+           [ Resp.BulkString (id_to_string entry.id); Resp.RespList data ])
+  |> fun l -> Resp.RespList l
+
+let take (existing_stream : t) (count : int) : Resp.t list * t =
+  let count = min count (List.length existing_stream) in
+  let resps =
+    List.take existing_stream count
+    |> List.map ~f:(fun entry -> entries_to_resp [ entry ])
+  in
+  ( resps,
+    List.sub ~pos:count
+      ~len:(List.length existing_stream - count)
+      existing_stream )
+
+let xadd (id : string) (data : string list) (listener_count : int)
     (stream : t option) : t option * Resp.t * Resp.t list =
   let stream_data = match stream with Some stream -> stream | None -> [] in
   let last_entry_id =
@@ -77,22 +101,10 @@ let xadd (id : string) (data : string list) (_listener_count : int)
       | Ok id ->
           let new_stream = stream_data @ [ { id; data } ] in
           let id = id_to_string id in
-          (Some new_stream, Resp.BulkString id, [])
+          let listener_resp_list, new_stream = take new_stream listener_count in
+          (Some new_stream, Resp.BulkString id, listener_resp_list)
       | Error error -> (Some stream_data, Resp.RespError error, []))
   | Error error -> (None, Resp.RespError error, [])
-
-let entries_to_resp (entries : entry_t list) : Resp.t =
-  entries
-  |> List.map ~f:(fun entry ->
-         let (data : Resp.t list) =
-           List.fold entry.data ~init:[]
-             ~f:(fun (acc : Resp.t list) data_pair ->
-               let key, value = data_pair in
-               List.append acc [ Resp.BulkString key; Resp.BulkString value ])
-         in
-         Resp.RespList
-           [ Resp.BulkString (id_to_string entry.id); Resp.RespList data ])
-  |> fun l -> Resp.RespList l
 
 let xrange (from_id : string) (to_id : string) (stream : t option) : Resp.t =
   match stream with
