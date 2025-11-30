@@ -107,12 +107,13 @@ let xrange (from_id : string) (to_id : string) (stream : t option) : Resp.t =
       |> fun resp -> resp
   | None -> Resp.RespError "key not found"
 
-let xread (from_id : string) (stream : t option) : Resp.t =
+let xread (key : string) (from_id : string) (stream : t option) : Resp.t =
   match stream with
   | Some stream ->
       let from_id = parse_xrange_id from_id FromId in
       stream
       |> List.filter ~f:(fun entry -> compare_id_t entry.id from_id > 0)
       |> entries_to_resp
-      |> fun resp -> resp
+      |> fun resp ->
+      Resp.RespList [ Resp.RespList [ Resp.BulkString key; resp ] ]
   | None -> Resp.RespError "key not found"

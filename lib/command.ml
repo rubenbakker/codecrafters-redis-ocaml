@@ -64,7 +64,7 @@ let xrange (key : string) (from_id : string) (to_id : string) : Resp.t =
   Store.query_stream key (Streams.xrange from_id to_id)
 
 let xread (key : string) (from_id : string) : Resp.t =
-  Store.query_stream key (Streams.xread from_id)
+  Store.query_stream key (Streams.xread key from_id)
 
 let process (str : string) : Resp.t =
   let command = Resp.command str in
