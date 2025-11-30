@@ -6,13 +6,14 @@ type t =
 val get : string -> t option
 val set : string -> t -> Lifetime.t -> unit
 
-val query_list : string -> (Lists.t option -> Resp.t) -> Resp.t
-val mutate_list : string -> (Lists.t option -> (Lists.t option * Resp.t)) -> Resp.t
-val pop_list_or_wait : string -> float -> (Lists.t option -> (Lists.t option * Resp.t)) -> Resp.t
-val query_stream : string -> (Streams.t option -> Resp.t) -> Resp.t
-val mutate_stream :
+
+val query : string -> (t option -> 'a option) -> ('a option -> Resp.t) -> Resp.t 
+val pop_list_or_wait : string -> float -> (int -> Lists.t option -> (Lists.t option * Resp.t * Resp.t list)) -> Resp.t
+val mutate :
   string ->
-  (Streams.t option -> Streams.t option * Resp.t) ->
+  (t option -> 'a option) ->
+  ('a option -> t option) ->
+  (int -> 'a option -> ('a option * Resp.t * Resp.t list)) ->
   Resp.t
 
 

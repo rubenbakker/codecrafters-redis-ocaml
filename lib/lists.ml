@@ -36,36 +36,6 @@ let lrange (from_idx : string) (to_idx : string) (existing_list : t option) :
       | None -> RespList [])
   | _ -> Resp.RespList []
 
-let lpush (data : string list) (existing_list : t option) : t option * Resp.t =
-  let values = List.rev data in
-  let new_list =
-    match existing_list with Some l -> values @ l | _ -> values
-  in
-  (Some new_list, Resp.Integer (List.length new_list))
-
-let rpush (data : string list) (existing_list : t option) : t option * Resp.t =
-  let new_list = match existing_list with Some l -> l @ data | _ -> data in
-  (Some new_list, Resp.Integer (List.length new_list))
-
-let lpop (count : int) (existing_list : t option) : t option * Resp.t =
-  match existing_list with
-  | Some existing_list -> (
-      match existing_list with
-      | first :: rest as l -> (
-          match count with
-          | 1 -> (Some rest, Resp.BulkString first)
-          | _ ->
-              let count = Int.min (List.length l) count in
-              let result = List.take l count in
-              let new_list =
-                List.sub ~pos:count ~len:(List.length l - count) l
-              in
-              ( Some new_list,
-                Resp.RespList
-                  (List.map ~f:(fun str -> Resp.BulkString str) result) ))
-      | _ -> (None, Resp.Null))
-  | _ -> (None, Resp.Null)
-
 let take (existing_list : t) (count : int) : Resp.t list * t =
   let count = min count (List.length existing_list) in
   let resps =
@@ -74,6 +44,42 @@ let take (existing_list : t) (count : int) : Resp.t list * t =
   ( resps,
     List.sub ~pos:count ~len:(List.length existing_list - count) existing_list
   )
+
+let lpush (data : string list) (listener_count : int) (existing_list : t option)
+    : t option * Resp.t * Resp.t list =
+  let values = List.rev data in
+  let new_list =
+    match existing_list with Some l -> values @ l | _ -> values
+  in
+  let listener_resp_list, new_list = take new_list listener_count in
+  (Some new_list, Resp.Integer (List.length new_list), listener_resp_list)
+
+let rpush (data : string list) (listener_count : int) (existing_list : t option)
+    : t option * Resp.t * Resp.t list =
+  let new_list = match existing_list with Some l -> l @ data | _ -> data in
+  let listener_resp_list, new_list = take new_list listener_count in
+  (Some new_list, Resp.Integer (List.length new_list), listener_resp_list)
+
+let lpop (count : int) (_listener_count : int) (existing_list : t option) :
+    t option * Resp.t * Resp.t list =
+  match existing_list with
+  | Some existing_list -> (
+      match existing_list with
+      | first :: rest as l -> (
+          match count with
+          | 1 -> (Some rest, Resp.BulkString first, [])
+          | _ ->
+              let count = Int.min (List.length l) count in
+              let result = List.take l count in
+              let new_list =
+                List.sub ~pos:count ~len:(List.length l - count) l
+              in
+              ( Some new_list,
+                Resp.RespList
+                  (List.map ~f:(fun str -> Resp.BulkString str) result),
+                [] ))
+      | _ -> (None, Resp.Null, []))
+  | _ -> (None, Resp.Null, [])
 
 let%test_unit "lrange positive idx" =
   [%test_eq: (int * int) option] (normalize_lrange 5 1 3) (Some (1, 3))
@@ -89,3 +95,4 @@ let%test_unit "lrange negative from_idx and to_idx" =
 
 let%test_unit "lrange negative from_idx and to_idx" =
   [%test_eq: (int * int) option] (normalize_lrange 5 (-7) 99) (Some (0, 5))
+

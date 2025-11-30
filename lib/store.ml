@@ -40,19 +40,15 @@ let protect fn =
 let set_no_lock (key : string) (value : t) (expires : Lifetime.t) : unit =
   repo := StringMap.add key (value, Lifetime.to_abolute_expires expires) !repo
 
-let notify_listeners (key : string) (l : Lists.t) : unit =
-  match StringMap.find_opt key !listeners with
-  | None -> ()
-  | Some queue ->
-      let resp_items, new_list = Lists.take l (Queue.length queue) in
-      set_no_lock key (StorageList new_list) Lifetime.Forever;
-      resp_items
-      |> List.iter ~f:(fun value ->
-             match Queue.dequeue queue with
-             | None -> ()
-             | Some listener ->
-                 listener.result <- Some value;
-                 Stdlib.Condition.signal listener.condition)
+let notify_listeners (listener_queue : listener Queue.t)
+    (resp_items : Resp.t list) : unit =
+  resp_items
+  |> List.iter ~f:(fun value ->
+         match Queue.dequeue listener_queue with
+         | None -> ()
+         | Some listener ->
+             listener.result <- Some value;
+             Stdlib.Condition.signal listener.condition)
 
 let get_no_lock (key : string) : t option =
   match StringMap.find_opt key !repo with
@@ -67,30 +63,16 @@ let set (key : string) (value : t) (expires : Lifetime.t) : unit =
 
 let get (key : string) : t option = protect (fun () -> get_no_lock key)
 
-let as_list_option (storage_value : t option) : Lists.t option =
+let convert_to_list (storage_value : t option) : Lists.t option =
   match storage_value with Some (StorageList l) -> Some l | _ -> None
 
-let query_list (key : string) (fn : Lists.t option -> Resp.t) : Resp.t =
-  protect (fun () -> get_no_lock key |> as_list_option |> fn)
-
-let mutate_list (key : string) (fn : Lists.t option -> Lists.t option * Resp.t)
-    : Resp.t =
-  protect (fun () ->
-      let exiting_list = get_no_lock key |> as_list_option in
-      let new_list, resp = fn exiting_list in
-      match new_list with
-      | Some l ->
-          set_no_lock key (StorageList l) Lifetime.Forever;
-          notify_listeners key l;
-          resp
-      | None -> resp)
-
 let pop_list_or_wait (key : string) (timeout : float)
-    (fn : Lists.t option -> Lists.t option * Resp.t) : Resp.t =
+    (fn : int -> Lists.t option -> Lists.t option * Resp.t * Resp.t list) :
+    Resp.t =
   let outcome =
     protect (fun () ->
-        let exiting_list = get_no_lock key |> as_list_option in
-        let data, resp = fn exiting_list in
+        let exiting_list = get_no_lock key |> convert_to_list in
+        let data, resp, _ = fn 0 exiting_list in
         match data with
         | Some l ->
             set_no_lock key (StorageList l) Lifetime.Forever;
@@ -127,22 +109,29 @@ let pop_list_or_wait (key : string) (timeout : float)
           | Some resp -> Resp.RespList [ Resp.BulkString key; resp ]
           | None -> Resp.NullArray)
 
-let as_stream_option (storage_value : t option) : Streams.t option =
-  match storage_value with
-  | Some (StorageStream stream) -> Some stream
-  | _ -> None
+let query (key : string) (convert : t option -> 'a option)
+    (query : 'a option -> Resp.t) : Resp.t =
+  protect (fun () -> get_no_lock key |> convert |> query)
 
-let query_stream (key : string) (fn : Streams.t option -> Resp.t) : Resp.t =
-  protect (fun () -> get_no_lock key |> as_stream_option |> fn)
-
-let mutate_stream (key : string)
-    (fn : Streams.t option -> Streams.t option * Resp.t) : Resp.t =
+let mutate (key : string) (from_store : 't option -> 'a option)
+    (to_store : 'a option -> t option)
+    (fn : int -> 'a option -> 'a option * Resp.t * Resp.t list) : Resp.t =
   protect (fun () ->
-      let stream, resp = get_no_lock key |> as_stream_option |> fn in
-      (match stream with
-      | Some stream -> set_no_lock key (StorageStream stream) Lifetime.Forever
+      let listener_queue = StringMap.find_opt key !listeners in
+      let queue_length =
+        match listener_queue with Some q -> Queue.length q | None -> 0
+      in
+      let store_data, result_resp, notify_resp_list =
+        get_no_lock key |> from_store |> fn queue_length
+      in
+      (match to_store store_data with
+      | Some store_data -> (
+          set_no_lock key store_data Lifetime.Forever;
+          match listener_queue with
+          | Some lq -> notify_listeners lq notify_resp_list
+          | None -> ())
       | None -> ());
-      resp)
+      result_resp)
 
 let rec remove_expired_entries_loop () : unit =
   protect (fun () ->

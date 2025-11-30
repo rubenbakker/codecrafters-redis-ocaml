@@ -23,19 +23,35 @@ let get (key : string) : Resp.t =
   let value = Store.get key in
   match value with None -> Resp.Null | Some v -> resp_from_store v
 
+let store_to_list (storage_value : Store.t option) : Lists.t option =
+  match storage_value with Some (StorageList l) -> Some l | _ -> None
+
+let store_to_stream (storage_value : Store.t option) : Streams.t option =
+  match storage_value with
+  | Some (StorageStream stream) -> Some stream
+  | _ -> None
+
+let stream_to_store (stream : Streams.t option) : Store.t option =
+  match stream with
+  | Some stream -> Some (Store.StorageStream stream)
+  | _ -> None
+
+let list_to_store (l : Lists.t option) : Store.t option =
+  match l with Some l -> Some (Store.StorageList l) | None -> None
+
 let rpush (key : string) (rest : string list) : Resp.t =
-  Store.mutate_list key (Lists.rpush rest)
+  Store.mutate key store_to_list list_to_store (Lists.rpush rest)
 
 let lpush (key : string) (rest : string list) =
-  Store.mutate_list key (Lists.lpush rest)
+  Store.mutate key store_to_list list_to_store (Lists.lpush rest)
 
 let lrange (key : string) (from_idx : string) (to_idx : string) : Resp.t =
-  Store.query_list key (Lists.lrange from_idx to_idx)
+  Store.query key store_to_list (Lists.lrange from_idx to_idx)
 
-let llen (key : string) : Resp.t = Store.query_list key Lists.llen
+let llen (key : string) : Resp.t = Store.query key store_to_list Lists.llen
 
 let lpop (key : string) (count : int) : Resp.t =
-  Store.mutate_list key (Lists.lpop count)
+  Store.mutate key store_to_list list_to_store (Lists.lpop count)
 
 let blpop (key : string) (timeout : string) : Resp.t =
   let timeout =
@@ -58,10 +74,10 @@ let type_cmd (key : string) : Resp.t =
 let echo (message : string) : Resp.t = Resp.BulkString message
 
 let xadd (key : string) (id : string) (rest : string list) : Resp.t =
-  Store.mutate_stream key (Streams.xadd id rest)
+  Store.mutate key store_to_stream stream_to_store (Streams.xadd id rest)
 
 let xrange (key : string) (from_id : string) (to_id : string) : Resp.t =
-  Store.query_stream key (Streams.xrange from_id to_id)
+  Store.query key store_to_stream (Streams.xrange from_id to_id)
 
 let xread (rest : string list) : Resp.t =
   let count = List.length rest / 2 in
@@ -69,7 +85,7 @@ let xread (rest : string list) : Resp.t =
   let from_ids = List.sub rest ~pos:count ~len:(List.length rest - count) in
   List.zip_exn keys from_ids
   |> List.map ~f:(fun (key, from_id) ->
-         Store.query_stream key (Streams.xread key from_id))
+         Store.query key store_to_stream (Streams.xread key from_id))
   |> fun l -> Resp.RespList l
 
 let process (str : string) : Resp.t =
