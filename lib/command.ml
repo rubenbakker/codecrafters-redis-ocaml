@@ -91,5 +91,5 @@ let process (str : string) : Resp.t =
   | "echo", [ message ] -> echo message
   | "xadd", key :: id :: rest -> xadd key id rest
   | "xrange", [ key; from_id; to_id ] -> xrange key from_id to_id
-  | "xread", "streams" :: rest -> xread rest
+  | "xread", _ :: rest -> xread rest
   | _ -> Resp.Null
