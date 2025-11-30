@@ -114,6 +114,5 @@ let xread (key : string) (from_id : string) (stream : t option) : Resp.t =
       stream
       |> List.filter ~f:(fun entry -> compare_id_t entry.id from_id > 0)
       |> entries_to_resp
-      |> fun resp ->
-      Resp.RespList [ Resp.RespList [ Resp.BulkString key; resp ] ]
+      |> fun resp -> Resp.RespList [ Resp.BulkString key; resp ]
   | None -> Resp.RespError "key not found"
