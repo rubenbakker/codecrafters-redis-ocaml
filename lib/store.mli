@@ -1,18 +1,20 @@
 type t =
   | StorageString of string
-  | StorageList of string list
+  | StorageList of Lists.t 
   | StorageStream of Streams.t
 
 val get : string -> t option
 val set : string -> t -> Lifetime.t -> unit
-val rpush : string -> string list -> int
-val lpush : string -> string list -> int
-val pop_or_wait : string -> float -> t option
-val start_gc : unit -> Thread.t
-val start_expire_listeners : unit -> Thread.t
-val query_stream : string -> (Streams.t option -> Resp.t) -> Resp.t
 
+val query_list : string -> (Lists.t option -> Resp.t) -> Resp.t
+val mutate_list : string -> (Lists.t option -> ((string list * Lists.t) option * Resp.t)) -> Resp.t
+val pop_list_or_wait : string -> float -> (Lists.t option -> ((string list * Lists.t) option * Resp.t)) -> Resp.t
+val query_stream : string -> (Streams.t option -> Resp.t) -> Resp.t
 val mutate_stream :
   string ->
   (Streams.t option -> Streams.t option * Resp.t) ->
   Resp.t
+
+
+val start_gc : unit -> Thread.t
+val start_expire_listeners : unit -> Thread.t

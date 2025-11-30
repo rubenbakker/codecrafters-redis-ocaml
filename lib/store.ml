@@ -4,7 +4,7 @@ module StringMap = Stdlib.Map.Make (String)
 (** storage value type *)
 type t =
   | StorageString of string
-  | StorageList of string list
+  | StorageList of Lists.t
   | StorageStream of Streams.t
 
 (** storage data stored as repo *)
@@ -24,13 +24,13 @@ type listener = {
   lock : Stdlib.Mutex.t;
   condition : Stdlib.Condition.t;
   lifetime : Lifetime.t;
-  mutable result : t option;
+  mutable result : Resp.t option;
 }
 
 (** module global storage for all listeners *)
 let listeners : listener Queue.t StringMap.t ref = ref StringMap.empty
 
-type pop_or_wait_result = WaitResult of listener | ValueResult of t
+type pop_or_wait_result = WaitResult of listener | ValueResult of Resp.t
 
 let protect fn =
   Stdlib.Fun.protect ~finally:unlock (fun () ->
@@ -47,7 +47,7 @@ let notify_listeners (key : string) (values : string list) : unit =
              match Queue.dequeue queue with
              | None -> ()
              | Some listener ->
-                 listener.result <- Some (StorageString value);
+                 listener.result <- Some (BulkString value);
                  Stdlib.Condition.signal listener.condition)
 
 let set_no_lock (key : string) (value : t) (expires : Lifetime.t) : unit =
@@ -66,46 +66,34 @@ let set (key : string) (value : t) (expires : Lifetime.t) : unit =
 
 let get (key : string) : t option = protect (fun () -> get_no_lock key)
 
-let rpush (key : string) (values : string list) : int =
+let as_list_option (storage_value : t option) : Lists.t option =
+  match storage_value with Some (StorageList l) -> Some l | _ -> None
+
+let query_list (key : string) (fn : Lists.t option -> Resp.t) : Resp.t =
+  protect (fun () -> get_no_lock key |> as_list_option |> fn)
+
+let mutate_list (key : string)
+    (fn : Lists.t option -> (string list * Lists.t) option * Resp.t) : Resp.t =
   protect (fun () ->
-      let exiting_list = get_no_lock key in
-      let new_list =
-        match exiting_list with
-        | Some (StorageList l) -> l @ values
-        | _ -> values
-      in
-      set_no_lock key (StorageList new_list) Lifetime.Forever;
-      notify_listeners key new_list;
-      List.length new_list)
+      let exiting_list = get_no_lock key |> as_list_option in
+      let new_list, resp = fn exiting_list in
+      match new_list with
+      | Some (values, l) ->
+          set_no_lock key (StorageList l) Lifetime.Forever;
+          notify_listeners key values;
+          resp
+      | None -> resp)
 
-let lpush (key : string) (rest : string list) : int =
-  protect (fun () ->
-      let values = List.rev rest in
-      let exiting_list = get_no_lock key in
-      let new_list =
-        match exiting_list with
-        | Some (StorageList l) -> values @ l
-        | _ -> values
-      in
-      set_no_lock key (StorageList new_list) Lifetime.Forever;
-      notify_listeners key new_list;
-      List.length new_list)
-
-let pop_value (key : string) : t option =
-  match get_no_lock key with
-  | None -> None
-  | Some value -> (
-      match value with
-      | StorageList (first :: rest) ->
-          repo := StringMap.add key (StorageList rest, Lifetime.Forever) !repo;
-          Some (StorageString first)
-      | _ -> None)
-
-let pop_or_wait (key : string) (timeout : float) : t option =
+let pop_list_or_wait (key : string) (timeout : float)
+    (fn : Lists.t option -> (string list * Lists.t) option * Resp.t) : Resp.t =
   let outcome =
     protect (fun () ->
-        match pop_value key with
-        | Some v -> ValueResult v
+        let exiting_list = get_no_lock key |> as_list_option in
+        let data, resp = fn exiting_list in
+        match data with
+        | Some (_, l) ->
+            set_no_lock key (StorageList l) Lifetime.Forever;
+            ValueResult (Resp.RespList [ Resp.BulkString key; resp ])
         | _ ->
             let condition = Stdlib.Condition.create () in
             let lock = Stdlib.Mutex.create () in
@@ -130,10 +118,30 @@ let pop_or_wait (key : string) (timeout : float) : t option =
             WaitResult listener)
   in
   match outcome with
-  | ValueResult v -> Some v
+  | ValueResult v -> v
   | WaitResult listener ->
       Stdlib.Condition.wait listener.condition listener.lock;
-      protect (fun () -> listener.result)
+      protect (fun () ->
+          match listener.result with
+          | Some resp -> Resp.RespList [ Resp.BulkString key; resp ]
+          | None -> Resp.NullArray)
+
+let as_stream_option (storage_value : t option) : Streams.t option =
+  match storage_value with
+  | Some (StorageStream stream) -> Some stream
+  | _ -> None
+
+let query_stream (key : string) (fn : Streams.t option -> Resp.t) : Resp.t =
+  protect (fun () -> get_no_lock key |> as_stream_option |> fn)
+
+let mutate_stream (key : string)
+    (fn : Streams.t option -> Streams.t option * Resp.t) : Resp.t =
+  protect (fun () ->
+      let stream, resp = get_no_lock key |> as_stream_option |> fn in
+      (match stream with
+      | Some stream -> set_no_lock key (StorageStream stream) Lifetime.Forever
+      | None -> ());
+      resp)
 
 let rec remove_expired_entries_loop () : unit =
   protect (fun () ->
@@ -174,20 +182,3 @@ let rec expire_listeners () : unit =
 
 let start_gc () : Thread.t = Thread.create remove_expired_entries_loop ()
 let start_expire_listeners () : Thread.t = Thread.create expire_listeners ()
-
-let as_stream_option (storage_value : t option) : Streams.t option =
-  match storage_value with
-  | Some (StorageStream stream) -> Some stream
-  | _ -> None
-
-let query_stream (key : string) (fn : Streams.t option -> Resp.t) : Resp.t =
-  protect (fun () -> get_no_lock key |> as_stream_option |> fn)
-
-let mutate_stream (key : string)
-    (fn : Streams.t option -> Streams.t option * Resp.t) : Resp.t =
-  protect (fun () ->
-      let stream, resp = get_no_lock key |> as_stream_option |> fn in
-      (match stream with
-      | Some stream -> set_no_lock key (StorageStream stream) Lifetime.Forever
-      | None -> ());
-      resp)
