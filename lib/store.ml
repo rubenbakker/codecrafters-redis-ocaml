@@ -5,7 +5,7 @@ module StringMap = Stdlib.Map.Make (String)
 type t =
   | StorageString of string
   | StorageList of string list
-  | StorageStream of Streams.entry_t list
+  | StorageStream of Streams.t
 
 (** storage data stored as repo *)
 let repo : (t * Lifetime.t) StringMap.t ref = ref StringMap.empty
@@ -44,11 +44,11 @@ let notify_listeners (key : string) (values : string list) : unit =
       let count = Int.min (Queue.length queue) (List.length values) in
       List.take values count
       |> List.iter ~f:(fun value ->
-          match Queue.dequeue queue with
-          | None -> ()
-          | Some listener ->
-              listener.result <- Some (StorageString value);
-              Stdlib.Condition.signal listener.condition)
+             match Queue.dequeue queue with
+             | None -> ()
+             | Some listener ->
+                 listener.result <- Some (StorageString value);
+                 Stdlib.Condition.signal listener.condition)
 
 let set_no_lock (key : string) (value : t) (expires : Lifetime.t) : unit =
   repo := StringMap.add key (value, Lifetime.to_abolute_expires expires) !repo
@@ -135,30 +135,6 @@ let pop_or_wait (key : string) (timeout : float) : t option =
       Stdlib.Condition.wait listener.condition listener.lock;
       protect (fun () -> listener.result)
 
-let xadd (key : string) (id : string) (rest : string list) :
-    (string * Streams.entry_t list, string) Result.t =
-  let stream =
-    match get_no_lock key with
-    | Some (StorageStream stream) -> stream
-    | None -> []
-    | _ -> []
-  in
-  match Streams.add_entry_to_stream id (Listutils.make_pairs rest) stream with
-  | Ok (id, stream) ->
-      set_no_lock key (StorageStream stream) Lifetime.Forever;
-      Ok (id, stream)
-  | Error err -> Error err
-
-let xrange (key : string) (from_id : string) (to_id : string) :
-    (Streams.entry_t list, string) Result.t =
-  let stream =
-    match get_no_lock key with
-    | Some (StorageStream stream) -> stream
-    | None -> []
-    | _ -> []
-  in
-  Ok (Streams.xrange from_id to_id stream)
-
 let rec remove_expired_entries_loop () : unit =
   protect (fun () ->
       let current_time = Lifetime.now () in
@@ -185,7 +161,7 @@ let rec expire_listeners () : unit =
             Queue.filter queue ~f:(fun listener ->
                 Lifetime.has_expired current_time listener.lifetime)
             |> Queue.iter ~f:(fun listener ->
-                Stdlib.Condition.signal listener.condition);
+                   Stdlib.Condition.signal listener.condition);
             let new_queue =
               Queue.filter queue ~f:(fun listener ->
                   not (Lifetime.has_expired current_time listener.lifetime))
@@ -198,3 +174,20 @@ let rec expire_listeners () : unit =
 
 let start_gc () : Thread.t = Thread.create remove_expired_entries_loop ()
 let start_expire_listeners () : Thread.t = Thread.create expire_listeners ()
+
+let as_stream_option (storage_value : t option) : Streams.t option =
+  match storage_value with
+  | Some (StorageStream stream) -> Some stream
+  | _ -> None
+
+let query_stream (key : string) (fn : Streams.t option -> Resp.t) : Resp.t =
+  protect (fun () -> get_no_lock key |> as_stream_option |> fn)
+
+let mutate_stream (key : string)
+    (fn : Streams.t option -> Streams.t option * Resp.t) : Resp.t =
+  protect (fun () ->
+      let stream, resp = get_no_lock key |> as_stream_option |> fn in
+      (match stream with
+      | Some stream -> set_no_lock key (StorageStream stream) Lifetime.Forever
+      | None -> ());
+      resp)

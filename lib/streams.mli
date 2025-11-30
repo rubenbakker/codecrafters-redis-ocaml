@@ -1,16 +1,5 @@
-type id_t = { millis : int; sequence : int }
-type entry_t = { id : id_t; data : (string * string) list }
 
-(** Add a new entry to an existing redis stream *)
+type t
 
-val add_entry_to_stream :
-  string ->
-  (string * string) list ->
-  entry_t list ->
-  (string * entry_t list, string) Result.t
-
-(** Get range of entries *)
-
-val id_to_string : id_t -> string
-val xrange : string -> string -> entry_t list -> entry_t list
-val entries_to_resp : entry_t list -> Resp.t
+val xadd : string -> string list -> t option -> t option * Resp.t
+val xrange : string -> string -> t option -> Resp.t

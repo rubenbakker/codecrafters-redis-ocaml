@@ -96,25 +96,21 @@ let blpop (key : string) (timeout : string) : Resp.t =
 
 let type_cmd (key : string) : Resp.t =
   (match Store.get key with
-    | None -> "none"
-    | Some v -> (
-        match v with
-        | Store.StorageList _ -> "list"
-        | Store.StorageString _ -> "string"
-        | Store.StorageStream _ -> "stream"))
+  | None -> "none"
+  | Some v -> (
+      match v with
+      | Store.StorageList _ -> "list"
+      | Store.StorageString _ -> "string"
+      | Store.StorageStream _ -> "stream"))
   |> fun v -> Resp.SimpleString v
 
 let echo (message : string) : Resp.t = Resp.BulkString message
 
 let xadd (key : string) (id : string) (rest : string list) : Resp.t =
-  match Store.xadd key id rest with
-  | Ok (id, _) -> Resp.BulkString id
-  | Error error -> Resp.RespError error
+  Store.mutate_stream key (Streams.xadd id rest)
 
 let xrange (key : string) (from_id : string) (to_id : string) : Resp.t =
-  match Store.xrange key from_id to_id with
-  | Ok entries -> Streams.entries_to_resp entries
-  | Error err -> Resp.RespError err
+  Store.query_stream key (Streams.xrange from_id to_id)
 
 let process (str : string) : Resp.t =
   let command = Resp.command str in
