@@ -30,7 +30,7 @@ type listener = {
 (** module global storage for all listeners *)
 let listeners : listener Queue.t StringMap.t ref = ref StringMap.empty
 
-type pop_or_wait_result = WaitResult of listener | ValueResult of Resp.t
+type wait_result = WaitResult of listener | ValueResult of Resp.t
 
 let protect fn =
   Stdlib.Fun.protect ~finally:unlock (fun () ->

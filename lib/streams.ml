@@ -30,16 +30,18 @@ let parse_entry_id (id : string) (last_entry_id : id_t) :
   | _ -> Error "Not a valid stream id"
 
 let parse_xrange_id (id : string) (id_type : xrange_id_t) : id_t =
-  if String.(id = "-") then { millis = 0; sequence = 0 }
-  else
-    match String.split ~on:'-' id with
-    | [ millis; sequence ] ->
-        { millis = Int.of_string millis; sequence = Int.of_string sequence }
-    | [ millis ] -> (
-        match id_type with
-        | FromId -> { millis = Int.of_string millis; sequence = 0 }
-        | ToId -> { millis = Int.of_string millis; sequence = Int.max_value })
-    | _ -> { millis = 0; sequence = 0 }
+  match id with
+  | "-" -> { millis = 0; sequence = 0 }
+  | "+" -> { millis = Int.max_value; sequence = Int.max_value }
+  | _ -> (
+      match String.split ~on:'-' id with
+      | [ millis; sequence ] ->
+          { millis = Int.of_string millis; sequence = Int.of_string sequence }
+      | [ millis ] -> (
+          match id_type with
+          | FromId -> { millis = Int.of_string millis; sequence = 0 }
+          | ToId -> { millis = Int.of_string millis; sequence = Int.max_value })
+      | _ -> { millis = 0; sequence = 0 })
 
 let%test_unit "parse xrange full" =
   [%test_eq: id_t] (parse_xrange_id "15" FromId) { millis = 15; sequence = 0 }
