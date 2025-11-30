@@ -37,21 +37,22 @@ let protect fn =
       lock ();
       fn ())
 
-let notify_listeners (key : string) (values : string list) : unit =
+let set_no_lock (key : string) (value : t) (expires : Lifetime.t) : unit =
+  repo := StringMap.add key (value, Lifetime.to_abolute_expires expires) !repo
+
+let notify_listeners (key : string) (l : Lists.t) : unit =
   match StringMap.find_opt key !listeners with
   | None -> ()
   | Some queue ->
-      let count = Int.min (Queue.length queue) (List.length values) in
-      List.take values count
+      let resp_items, new_list = Lists.take l (Queue.length queue) in
+      set_no_lock key (StorageList new_list) Lifetime.Forever;
+      resp_items
       |> List.iter ~f:(fun value ->
              match Queue.dequeue queue with
              | None -> ()
              | Some listener ->
-                 listener.result <- Some (BulkString value);
+                 listener.result <- Some value;
                  Stdlib.Condition.signal listener.condition)
-
-let set_no_lock (key : string) (value : t) (expires : Lifetime.t) : unit =
-  repo := StringMap.add key (value, Lifetime.to_abolute_expires expires) !repo
 
 let get_no_lock (key : string) : t option =
   match StringMap.find_opt key !repo with
@@ -72,26 +73,26 @@ let as_list_option (storage_value : t option) : Lists.t option =
 let query_list (key : string) (fn : Lists.t option -> Resp.t) : Resp.t =
   protect (fun () -> get_no_lock key |> as_list_option |> fn)
 
-let mutate_list (key : string)
-    (fn : Lists.t option -> (string list * Lists.t) option * Resp.t) : Resp.t =
+let mutate_list (key : string) (fn : Lists.t option -> Lists.t option * Resp.t)
+    : Resp.t =
   protect (fun () ->
       let exiting_list = get_no_lock key |> as_list_option in
       let new_list, resp = fn exiting_list in
       match new_list with
-      | Some (values, l) ->
+      | Some l ->
           set_no_lock key (StorageList l) Lifetime.Forever;
-          notify_listeners key values;
+          notify_listeners key l;
           resp
       | None -> resp)
 
 let pop_list_or_wait (key : string) (timeout : float)
-    (fn : Lists.t option -> (string list * Lists.t) option * Resp.t) : Resp.t =
+    (fn : Lists.t option -> Lists.t option * Resp.t) : Resp.t =
   let outcome =
     protect (fun () ->
         let exiting_list = get_no_lock key |> as_list_option in
         let data, resp = fn exiting_list in
         match data with
-        | Some (_, l) ->
+        | Some l ->
             set_no_lock key (StorageList l) Lifetime.Forever;
             ValueResult (Resp.RespList [ Resp.BulkString key; resp ])
         | _ ->
