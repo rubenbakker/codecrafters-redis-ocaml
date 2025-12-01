@@ -5,12 +5,14 @@ type id_t = { millis : int; sequence : int } [@@deriving compare, equal, sexp]
 type entry_t = { id : id_t; data : (string * string) list }
 [@@deriving compare, equal, sexp]
 
-type t = entry_t list
+type t = entry_t list [@@deriving compare, equal, sexp]
 type xrange_id_t = FromId | ToId
 
 let min_id = { millis = 0; sequence = 0 }
 let max_id = { millis = Int.max_value; sequence = Int.max_value }
 let id_to_string id = Stdlib.Printf.sprintf "%d-%d" id.millis id.sequence
+let empty () = []
+let to_sexp (input : t) : Sexp.t = sexp_of_t input
 
 let parse_entry_id (id : string) (last_entry_id : id_t) :
     (id_t, string) Result.t =
