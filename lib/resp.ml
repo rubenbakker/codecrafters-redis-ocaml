@@ -72,6 +72,8 @@ let rec to_string (item : t) : string =
   | NullArray -> "*-1\r\n"
   | RespError error -> Printf.sprintf "-%s\r\n" error
 
+let to_sexp (input : t) : Sexp.t = sexp_of_t input
+
 let arg arg =
   match arg with
   | Integer integer -> Int.to_string integer

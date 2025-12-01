@@ -8,6 +8,8 @@ type entry_t = { id : id_t; data : (string * string) list }
 type t = entry_t list
 type xrange_id_t = FromId | ToId
 
+let min_id = { millis = 0; sequence = 0 }
+let max_id = { millis = Int.max_value; sequence = Int.max_value }
 let id_to_string id = Stdlib.Printf.sprintf "%d-%d" id.millis id.sequence
 
 let parse_entry_id (id : string) (last_entry_id : id_t) :
@@ -31,8 +33,8 @@ let parse_entry_id (id : string) (last_entry_id : id_t) :
 
 let parse_xrange_id (id : string) (id_type : xrange_id_t) : id_t =
   match id with
-  | "-" -> { millis = 0; sequence = 0 }
-  | "+" -> { millis = Int.max_value; sequence = Int.max_value }
+  | "-" -> min_id
+  | "+" -> max_id
   | _ -> (
       match String.split ~on:'-' id with
       | [ millis; sequence ] ->
@@ -41,7 +43,7 @@ let parse_xrange_id (id : string) (id_type : xrange_id_t) : id_t =
           match id_type with
           | FromId -> { millis = Int.of_string millis; sequence = 0 }
           | ToId -> { millis = Int.of_string millis; sequence = Int.max_value })
-      | _ -> { millis = 0; sequence = 0 })
+      | _ -> min_id)
 
 let%test_unit "parse xrange full" =
   [%test_eq: id_t] (parse_xrange_id "15" FromId) { millis = 15; sequence = 0 }
@@ -62,37 +64,23 @@ let validate_entry_id (id : id_t) (reference_id : id_t) :
       "ERR The ID specified in XADD is equal or smaller than the target stream \
        top item"
 
-let entries_to_resp (entries : entry_t list) : Resp.t =
+let entries_to_resp (entries : t) : Resp.t =
   entries
   |> List.map ~f:(fun entry ->
-         let (data : Resp.t list) =
-           List.fold entry.data ~init:[]
-             ~f:(fun (acc : Resp.t list) data_pair ->
-               let key, value = data_pair in
-               List.append acc [ Resp.BulkString key; Resp.BulkString value ])
-         in
-         Resp.RespList
-           [ Resp.BulkString (id_to_string entry.id); Resp.RespList data ])
+      let (data : Resp.t list) =
+        List.fold entry.data ~init:[] ~f:(fun (acc : Resp.t list) data_pair ->
+            let key, value = data_pair in
+            List.append acc [ Resp.BulkString key; Resp.BulkString value ])
+      in
+      Resp.RespList
+        [ Resp.BulkString (id_to_string entry.id); Resp.RespList data ])
   |> fun l -> Resp.RespList l
-
-let take (existing_stream : t) (count : int) : Resp.t list * t =
-  let count = min count (List.length existing_stream) in
-  let resps =
-    List.take existing_stream count
-    |> List.map ~f:(fun entry -> entries_to_resp [ entry ])
-  in
-  ( resps,
-    List.sub ~pos:count
-      ~len:(List.length existing_stream - count)
-      existing_stream )
 
 let xadd (id : string) (data : string list) (listener_count : int)
     (stream : t option) : t option * Resp.t * Resp.t list =
   let stream_data = match stream with Some stream -> stream | None -> [] in
   let last_entry_id =
-    match List.last stream_data with
-    | Some entry -> entry.id
-    | None -> { millis = 0; sequence = 0 }
+    match List.last stream_data with Some entry -> entry.id | None -> min_id
   in
   let data = Listutils.make_pairs data in
   match parse_entry_id id last_entry_id with
@@ -101,8 +89,9 @@ let xadd (id : string) (data : string list) (listener_count : int)
       | Ok id ->
           let new_stream = stream_data @ [ { id; data } ] in
           let id = id_to_string id in
-          let listener_resp_list, new_stream = take new_stream listener_count in
-          (Some new_stream, Resp.BulkString id, listener_resp_list)
+          ( Some new_stream,
+            Resp.BulkString id,
+            if listener_count > 0 then [ entries_to_resp new_stream ] else [] )
       | Error error -> (Some stream_data, Resp.RespError error, []))
   | Error error -> (None, Resp.RespError error, [])
 
@@ -113,8 +102,7 @@ let xrange (from_id : string) (to_id : string) (stream : t option) : Resp.t =
       let to_id = parse_xrange_id to_id ToId in
       stream
       |> List.filter ~f:(fun entry ->
-             compare_id_t entry.id from_id >= 0
-             && compare_id_t entry.id to_id <= 0)
+          compare_id_t entry.id from_id >= 0 && compare_id_t entry.id to_id <= 0)
       |> entries_to_resp
       |> fun resp -> resp
   | None -> Resp.RespError "key not found"
@@ -128,3 +116,9 @@ let xread (key : string) (from_id : string) (stream : t option) : Resp.t =
       |> entries_to_resp
       |> fun resp -> Resp.RespList [ Resp.BulkString key; resp ]
   | None -> Resp.RespError "key not found"
+
+let create (input : (string * (string * string) list) list) : t =
+  List.map
+    ~f:(fun (id, data) ->
+      { id = parse_entry_id id min_id |> Result.ok_or_failwith; data })
+    input
