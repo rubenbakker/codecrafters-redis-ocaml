@@ -62,3 +62,17 @@ let%expect_test "xadd on empty list with listeners" =
      ((RespList
        ((BulkString 0-1) (RespList ((BulkString hello) (BulkString world)))))))
     |}]
+
+let%expect_test "xread existing" =
+  let result = Streams.xread "key" "0-1" (create_sample_stream ()) in
+  Stdio.print_endline (Resp.to_sexp result.return |> Sexp.to_string_hum);
+  [%expect
+    {|
+    (RespList
+     ((BulkString key)
+      (RespList
+       ((RespList
+         ((BulkString 0-2) (RespList ((BulkString bar) (BulkString baz)))))
+        (RespList
+         ((BulkString 1-1) (RespList ((BulkString xx) (BulkString fff)))))))))
+    |}]
