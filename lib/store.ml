@@ -35,7 +35,9 @@ let protect fn =
 (** module global storage for all listeners *)
 let listeners : listener Queue.t StringMap.t ref = ref StringMap.empty
 
-type wait_result = WaitResult of listener | ValueResult of Resp.t
+type wait_result =
+  | WaitResult of listener * (Resp.t -> Resp.t)
+  | ValueResult of Resp.t
 
 let queue_listener (key : string) (timeout : Lifetime.t) : listener =
   let condition = Stdlib.Condition.create () in
@@ -54,10 +56,10 @@ let queue_listener (key : string) (timeout : Lifetime.t) : listener =
   Queue.enqueue queue listener;
   listener
 
-let wait_result (outcome : wait_result) ~(convert : Resp.t -> Resp.t) =
+let wait_result (outcome : wait_result) =
   match outcome with
   | ValueResult v -> v
-  | WaitResult listener ->
+  | WaitResult (listener, convert) ->
       Stdlib.Condition.wait listener.condition listener.lock;
       protect (fun () ->
           match listener.result with
@@ -110,10 +112,10 @@ let pop_list_or_wait (key : string) (timeout : float)
               | _ -> Lifetime.create_expiry_with_s timeout
             in
             let listener = queue_listener key lifetime in
-            WaitResult listener)
+            WaitResult
+              (listener, fun resp -> Resp.RespList [ Resp.BulkString key; resp ]))
   in
-  wait_result outcome ~convert:(fun resp ->
-      Resp.RespList [ Resp.BulkString key; resp ])
+  wait_result outcome
 
 let query (key : string) (convert : t option -> 'a option)
     (query : 'a option -> Storeop.query_result) : Resp.t =
@@ -121,11 +123,11 @@ let query (key : string) (convert : t option -> 'a option)
     protect (fun () ->
         match get_no_lock key |> convert |> query with
         | Value resp -> ValueResult resp
-        | Wait timeout ->
+        | Wait (timeout, convert) ->
             let listener = queue_listener key timeout in
-            WaitResult listener)
+            WaitResult (listener, convert))
   in
-  wait_result outcome ~convert:(fun resp -> resp)
+  wait_result outcome
 
 let mutate (key : string) (from_store : 't option -> 'a option)
     (to_store : 'a option -> t option)

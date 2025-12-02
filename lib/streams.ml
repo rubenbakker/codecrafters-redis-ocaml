@@ -78,6 +78,9 @@ let entries_to_resp (entries : t) : Resp.t =
         [ Resp.BulkString (id_to_string entry.id); Resp.RespList data ])
   |> fun l -> Resp.RespList l
 
+let xread_resp_result (key : string) (entries : entry_t list) : Resp.t =
+  Resp.RespList [ Resp.BulkString key; entries_to_resp entries ]
+
 let xadd (id : string) (data : string list) (listener_count : int)
     (stream : t option) : t Storeop.mutation_result =
   let stream_data = match stream with Some stream -> stream | None -> [] in
@@ -89,13 +92,15 @@ let xadd (id : string) (data : string list) (listener_count : int)
   | Ok id -> (
       match validate_entry_id id last_entry_id with
       | Ok id ->
-          let new_stream = stream_data @ [ { id; data } ] in
+          let new_entry_list = [ { id; data } ] in
+          let new_stream = stream_data @ new_entry_list in
           let id = id_to_string id in
           {
             store = Some new_stream;
             return = Resp.BulkString id;
             notify_with =
-              (if listener_count > 0 then [ entries_to_resp new_stream ] else []);
+              (if listener_count > 0 then [ entries_to_resp new_entry_list ]
+               else []);
           }
       | Error error ->
           {
@@ -120,9 +125,6 @@ let xrange (from_id : string) (to_id : string) (stream : t option) :
         |> entries_to_resp
     | None -> Resp.RespError "key not found")
 
-let xread_resp_result (key : string) (entries : entry_t list) : Resp.t =
-  Resp.RespList [ Resp.BulkString key; entries_to_resp entries ]
-
 let xread (key : string) (from_id : string) (timeout : Lifetime.t option)
     (stream : t option) : Storeop.query_result =
   match stream with
@@ -131,12 +133,16 @@ let xread (key : string) (from_id : string) (timeout : Lifetime.t option)
       stream |> List.filter ~f:(fun entry -> compare_id_t entry.id from_id > 0)
       |> fun l ->
       match (l, timeout) with
-      | [], Some timeout -> Storeop.Wait timeout
+      | [], Some timeout ->
+          Storeop.Wait
+            (timeout, fun resp -> Resp.RespList [ Resp.BulkString key; resp ])
       | [], None -> Storeop.Value Resp.NullArray
       | l, _ -> Storeop.Value (xread_resp_result key l))
   | None -> (
       match timeout with
-      | Some timeout -> Storeop.Wait timeout
+      | Some timeout ->
+          Storeop.Wait
+            (timeout, fun resp -> Resp.RespList [ Resp.BulkString key; resp ])
       | None -> Storeop.Value Resp.NullArray)
 
 let create (input : (string * (string * string) list) list) : t =

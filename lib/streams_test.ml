@@ -13,7 +13,7 @@ let value_of_result (result : Storeop.query_result) : Resp.t =
   match result with Value v -> v | Wait _ -> assert false
 
 let wait_of_result (result : Storeop.query_result) : Lifetime.t =
-  match result with Value _ -> assert false | Wait timeout -> timeout
+  match result with Value _ -> assert false | Wait (timeout, _) -> timeout
 
 let%expect_test "xrange all data" =
   let result =
