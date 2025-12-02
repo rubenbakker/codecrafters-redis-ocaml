@@ -27,6 +27,11 @@ type listener = {
   mutable result : Resp.t option;
 }
 
+let protect fn =
+  Stdlib.Fun.protect ~finally:unlock (fun () ->
+      lock ();
+      fn ())
+
 (** module global storage for all listeners *)
 let listeners : listener Queue.t StringMap.t ref = ref StringMap.empty
 
@@ -49,10 +54,15 @@ let queue_listener (key : string) (timeout : Lifetime.t) : listener =
   Queue.enqueue queue listener;
   listener
 
-let protect fn =
-  Stdlib.Fun.protect ~finally:unlock (fun () ->
-      lock ();
-      fn ())
+let wait_result (outcome : wait_result) ~(convert : Resp.t -> Resp.t) =
+  match outcome with
+  | ValueResult v -> v
+  | WaitResult listener ->
+      Stdlib.Condition.wait listener.condition listener.lock;
+      protect (fun () ->
+          match listener.result with
+          | Some resp -> convert resp
+          | None -> Resp.NullArray)
 
 let set_no_lock (key : string) (value : t) (expires : Lifetime.t) : unit =
   repo := StringMap.add key (value, Lifetime.to_abolute_expires expires) !repo
@@ -102,14 +112,8 @@ let pop_list_or_wait (key : string) (timeout : float)
             let listener = queue_listener key lifetime in
             WaitResult listener)
   in
-  match outcome with
-  | ValueResult v -> v
-  | WaitResult listener ->
-      Stdlib.Condition.wait listener.condition listener.lock;
-      protect (fun () ->
-          match listener.result with
-          | Some resp -> Resp.RespList [ Resp.BulkString key; resp ]
-          | None -> Resp.NullArray)
+  wait_result outcome ~convert:(fun resp ->
+      Resp.RespList [ Resp.BulkString key; resp ])
 
 let query (key : string) (convert : t option -> 'a option)
     (query : 'a option -> Storeop.query_result) : Resp.t =
@@ -121,14 +125,7 @@ let query (key : string) (convert : t option -> 'a option)
             let listener = queue_listener key timeout in
             WaitResult listener)
   in
-  match outcome with
-  | ValueResult v -> v
-  | WaitResult listener ->
-      Stdlib.Condition.wait listener.condition listener.lock;
-      protect (fun () ->
-          match listener.result with
-          | Some resp -> resp
-          | None -> Resp.NullArray)
+  wait_result outcome ~convert:(fun resp -> resp)
 
 let mutate (key : string) (from_store : 't option -> 'a option)
     (to_store : 'a option -> t option)
