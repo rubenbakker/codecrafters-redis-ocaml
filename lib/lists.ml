@@ -18,12 +18,12 @@ let normalize_lrange (len : int) (from_idx : int) (to_idx : int) :
   else None
 
 let llen (existing_list : t option) : Storeop.query_result =
-  {
-    return =
-      (match existing_list with
-      | Some l -> Resp.Integer (List.length l)
-      | _ -> Resp.Integer 0);
-  }
+  let result =
+    match existing_list with
+    | Some l -> Resp.Integer (List.length l)
+    | _ -> Resp.Integer 0
+  in
+  Storeop.Value result
 
 let lrange (from_idx : string) (to_idx : string) (existing_list : t option) :
     Storeop.query_result =
@@ -40,7 +40,7 @@ let lrange (from_idx : string) (to_idx : string) (existing_list : t option) :
         | None -> RespList [])
     | _ -> Resp.RespList []
   in
-  { return = resp }
+  Storeop.Value resp
 
 let take (existing_list : t) (count : int) : Resp.t list * t =
   let count = min count (List.length existing_list) in

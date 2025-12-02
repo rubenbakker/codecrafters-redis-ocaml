@@ -108,32 +108,36 @@ let xadd (id : string) (data : string list) (listener_count : int)
 
 let xrange (from_id : string) (to_id : string) (stream : t option) :
     Storeop.query_result =
-  match stream with
-  | Some stream ->
-      let from_id = parse_xrange_id from_id FromId in
-      let to_id = parse_xrange_id to_id ToId in
-      let resp =
+  Storeop.Value
+    (match stream with
+    | Some stream ->
+        let from_id = parse_xrange_id from_id FromId in
+        let to_id = parse_xrange_id to_id ToId in
         stream
         |> List.filter ~f:(fun entry ->
             compare_id_t entry.id from_id >= 0
             && compare_id_t entry.id to_id <= 0)
         |> entries_to_resp
-      in
-      { return = resp }
-  | None -> { return = Resp.RespError "key not found" }
+    | None -> Resp.RespError "key not found")
 
-let xread (key : string) (from_id : string) (stream : t option) :
-    Storeop.query_result =
+let xread_resp_result (key : string) (entries : entry_t list) : Resp.t =
+  Resp.RespList [ Resp.BulkString key; entries_to_resp entries ]
+
+let xread (key : string) (from_id : string) (timeout : Lifetime.t option)
+    (stream : t option) : Storeop.query_result =
   match stream with
-  | Some stream ->
+  | Some stream -> (
       let from_id = parse_xrange_id from_id FromId in
-      let resp =
-        stream
-        |> List.filter ~f:(fun entry -> compare_id_t entry.id from_id > 0)
-        |> entries_to_resp
-      in
-      { return = Resp.RespList [ Resp.BulkString key; resp ] }
-  | None -> { return = Resp.RespError "key not found" }
+      stream |> List.filter ~f:(fun entry -> compare_id_t entry.id from_id > 0)
+      |> fun l ->
+      match (l, timeout) with
+      | [], Some timeout -> Storeop.Wait timeout
+      | [], None -> Storeop.Value Resp.NullArray
+      | l, _ -> Storeop.Value (xread_resp_result key l))
+  | None -> (
+      match timeout with
+      | Some timeout -> Storeop.Wait timeout
+      | None -> Storeop.Value Resp.NullArray)
 
 let create (input : (string * (string * string) list) list) : t =
   List.map

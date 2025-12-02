@@ -1,6 +1,6 @@
 open Base
 
-type t = Forever | Expires of int
+type t = Forever | Expires of int [@@deriving compare, equal, sexp]
 
 let now () : int = Unix.gettimeofday () *. 1000.0 |> Int.of_float
 
@@ -24,3 +24,5 @@ let create_expiry_with_ms (millis : int) : t = Expires millis
 
 let create_expiry_with_s (seconds : float) : t =
   create_expiry_with_ms (Int.of_float Float.O.(seconds * 1000.0))
+
+let to_sexp (value : t) : Sexp.t = sexp_of_t value

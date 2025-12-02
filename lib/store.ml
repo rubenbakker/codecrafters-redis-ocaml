@@ -110,9 +110,35 @@ let pop_list_or_wait (key : string) (timeout : float)
 
 let query (key : string) (convert : t option -> 'a option)
     (query : 'a option -> Storeop.query_result) : Resp.t =
-  protect (fun () ->
-      let result = get_no_lock key |> convert |> query in
-      result.return)
+  let outcome =
+    protect (fun () ->
+        match get_no_lock key |> convert |> query with
+        | Value resp -> ValueResult resp
+        | Wait timeout ->
+            let condition = Stdlib.Condition.create () in
+            let lock = Stdlib.Mutex.create () in
+            let lifetime = Lifetime.to_abolute_expires timeout in
+            let listener = { lock; condition; lifetime; result = None } in
+            Stdlib.Mutex.lock lock;
+            let queue =
+              match StringMap.find_opt key !listeners with
+              | None ->
+                  let q : listener Queue.t = Queue.create () in
+                  listeners := StringMap.add key q !listeners;
+                  q
+              | Some q -> q
+            in
+            Queue.enqueue queue listener;
+            WaitResult listener)
+  in
+  match outcome with
+  | ValueResult v -> v
+  | WaitResult listener ->
+      Stdlib.Condition.wait listener.condition listener.lock;
+      protect (fun () ->
+          match listener.result with
+          | Some resp -> resp
+          | None -> Resp.NullArray)
 
 let mutate (key : string) (from_store : 't option -> 'a option)
     (to_store : 'a option -> t option)

@@ -63,12 +63,12 @@ let blpop (key : string) (timeout : string) : Resp.t =
 
 let type_cmd (key : string) : Resp.t =
   (match Store.get key with
-  | None -> "none"
-  | Some v -> (
-      match v with
-      | Store.StorageList _ -> "list"
-      | Store.StorageString _ -> "string"
-      | Store.StorageStream _ -> "stream"))
+    | None -> "none"
+    | Some v -> (
+        match v with
+        | Store.StorageList _ -> "list"
+        | Store.StorageString _ -> "string"
+        | Store.StorageStream _ -> "stream"))
   |> fun v -> Resp.SimpleString v
 
 let echo (message : string) : Resp.t = Resp.BulkString message
@@ -79,13 +79,13 @@ let xadd (key : string) (id : string) (rest : string list) : Resp.t =
 let xrange (key : string) (from_id : string) (to_id : string) : Resp.t =
   Store.query key store_to_stream (Streams.xrange from_id to_id)
 
-let xread (rest : string list) : Resp.t =
+let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   let count = List.length rest / 2 in
   let keys = List.take rest count in
   let from_ids = List.sub rest ~pos:count ~len:(List.length rest - count) in
   List.zip_exn keys from_ids
   |> List.map ~f:(fun (key, from_id) ->
-         Store.query key store_to_stream (Streams.xread key from_id))
+      Store.query key store_to_stream (Streams.xread key from_id timeout))
   |> fun l -> Resp.RespList l
 
 let process (str : string) : Resp.t =
@@ -107,5 +107,7 @@ let process (str : string) : Resp.t =
   | "echo", [ message ] -> echo message
   | "xadd", key :: id :: rest -> xadd key id rest
   | "xrange", [ key; from_id; to_id ] -> xrange key from_id to_id
-  | "xread", _ :: rest -> xread rest
+  | "xread", "block" :: timeout :: "streams" :: rest ->
+      xread rest (Some (Lifetime.create_expiry "px" timeout))
+  | "xread", _ :: rest -> xread rest None
   | _ -> Resp.Null
