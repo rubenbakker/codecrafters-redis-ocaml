@@ -44,11 +44,11 @@ let notify_listeners (listener_queue : listener Queue.t)
     (resp_items : Resp.t list) : unit =
   resp_items
   |> List.iter ~f:(fun value ->
-         match Queue.dequeue listener_queue with
-         | None -> ()
-         | Some listener ->
-             listener.result <- Some value;
-             Stdlib.Condition.signal listener.condition)
+      match Queue.dequeue listener_queue with
+      | None -> ()
+      | Some listener ->
+          listener.result <- Some value;
+          Stdlib.Condition.signal listener.condition)
 
 let get_no_lock (key : string) : t option =
   match StringMap.find_opt key !repo with
@@ -67,16 +67,15 @@ let convert_to_list (storage_value : t option) : Lists.t option =
   match storage_value with Some (StorageList l) -> Some l | _ -> None
 
 let pop_list_or_wait (key : string) (timeout : float)
-    (fn : int -> Lists.t option -> Lists.t option * Resp.t * Resp.t list) :
-    Resp.t =
+    (fn : int -> Lists.t option -> Lists.t Storeop.mutation_result) : Resp.t =
   let outcome =
     protect (fun () ->
         let exiting_list = get_no_lock key |> convert_to_list in
-        let data, resp, _ = fn 0 exiting_list in
-        match data with
+        let result = fn 0 exiting_list in
+        match result.store with
         | Some l ->
             set_no_lock key (StorageList l) Lifetime.Forever;
-            ValueResult (Resp.RespList [ Resp.BulkString key; resp ])
+            ValueResult (Resp.RespList [ Resp.BulkString key; result.return ])
         | _ ->
             let condition = Stdlib.Condition.create () in
             let lock = Stdlib.Mutex.create () in
@@ -110,28 +109,28 @@ let pop_list_or_wait (key : string) (timeout : float)
           | None -> Resp.NullArray)
 
 let query (key : string) (convert : t option -> 'a option)
-    (query : 'a option -> Resp.t) : Resp.t =
-  protect (fun () -> get_no_lock key |> convert |> query)
+    (query : 'a option -> Storeop.query_result) : Resp.t =
+  protect (fun () ->
+      let result = get_no_lock key |> convert |> query in
+      result.return)
 
 let mutate (key : string) (from_store : 't option -> 'a option)
     (to_store : 'a option -> t option)
-    (fn : int -> 'a option -> 'a option * Resp.t * Resp.t list) : Resp.t =
+    (fn : int -> 'a option -> 'a Storeop.mutation_result) : Resp.t =
   protect (fun () ->
       let listener_queue = StringMap.find_opt key !listeners in
       let queue_length =
         match listener_queue with Some q -> Queue.length q | None -> 0
       in
-      let store_data, result_resp, notify_resp_list =
-        get_no_lock key |> from_store |> fn queue_length
-      in
-      (match to_store store_data with
+      let result = get_no_lock key |> from_store |> fn queue_length in
+      (match to_store result.store with
       | Some store_data -> (
           set_no_lock key store_data Lifetime.Forever;
           match listener_queue with
-          | Some lq -> notify_listeners lq notify_resp_list
+          | Some lq -> notify_listeners lq result.notify_with
           | None -> ())
       | None -> ());
-      result_resp)
+      result.return)
 
 let rec remove_expired_entries_loop () : unit =
   protect (fun () ->
@@ -159,7 +158,7 @@ let rec expire_listeners () : unit =
             Queue.filter queue ~f:(fun listener ->
                 Lifetime.has_expired current_time listener.lifetime)
             |> Queue.iter ~f:(fun listener ->
-                   Stdlib.Condition.signal listener.condition);
+                Stdlib.Condition.signal listener.condition);
             let new_queue =
               Queue.filter queue ~f:(fun listener ->
                   not (Lifetime.has_expired current_time listener.lifetime))

@@ -79,7 +79,7 @@ let entries_to_resp (entries : t) : Resp.t =
   |> fun l -> Resp.RespList l
 
 let xadd (id : string) (data : string list) (listener_count : int)
-    (stream : t option) : t option * Resp.t * Resp.t list =
+    (stream : t option) : t Storeop.mutation_result =
   let stream_data = match stream with Some stream -> stream | None -> [] in
   let last_entry_id =
     match List.last stream_data with Some entry -> entry.id | None -> min_id
@@ -91,33 +91,49 @@ let xadd (id : string) (data : string list) (listener_count : int)
       | Ok id ->
           let new_stream = stream_data @ [ { id; data } ] in
           let id = id_to_string id in
-          ( Some new_stream,
-            Resp.BulkString id,
-            if listener_count > 0 then [ entries_to_resp new_stream ] else [] )
-      | Error error -> (Some stream_data, Resp.RespError error, []))
-  | Error error -> (None, Resp.RespError error, [])
+          {
+            store = Some new_stream;
+            return = Resp.BulkString id;
+            notify_with =
+              (if listener_count > 0 then [ entries_to_resp new_stream ] else []);
+          }
+      | Error error ->
+          {
+            store = Some stream_data;
+            return = Resp.RespError error;
+            notify_with = [];
+          })
+  | Error error ->
+      { store = None; return = Resp.RespError error; notify_with = [] }
 
-let xrange (from_id : string) (to_id : string) (stream : t option) : Resp.t =
+let xrange (from_id : string) (to_id : string) (stream : t option) :
+    Storeop.query_result =
   match stream with
   | Some stream ->
       let from_id = parse_xrange_id from_id FromId in
       let to_id = parse_xrange_id to_id ToId in
-      stream
-      |> List.filter ~f:(fun entry ->
-          compare_id_t entry.id from_id >= 0 && compare_id_t entry.id to_id <= 0)
-      |> entries_to_resp
-      |> fun resp -> resp
-  | None -> Resp.RespError "key not found"
+      let resp =
+        stream
+        |> List.filter ~f:(fun entry ->
+            compare_id_t entry.id from_id >= 0
+            && compare_id_t entry.id to_id <= 0)
+        |> entries_to_resp
+      in
+      { return = resp }
+  | None -> { return = Resp.RespError "key not found" }
 
-let xread (key : string) (from_id : string) (stream : t option) : Resp.t =
+let xread (key : string) (from_id : string) (stream : t option) :
+    Storeop.query_result =
   match stream with
   | Some stream ->
       let from_id = parse_xrange_id from_id FromId in
-      stream
-      |> List.filter ~f:(fun entry -> compare_id_t entry.id from_id > 0)
-      |> entries_to_resp
-      |> fun resp -> Resp.RespList [ Resp.BulkString key; resp ]
-  | None -> Resp.RespError "key not found"
+      let resp =
+        stream
+        |> List.filter ~f:(fun entry -> compare_id_t entry.id from_id > 0)
+        |> entries_to_resp
+      in
+      { return = Resp.RespList [ Resp.BulkString key; resp ] }
+  | None -> { return = Resp.RespError "key not found" }
 
 let create (input : (string * (string * string) list) list) : t =
   List.map
