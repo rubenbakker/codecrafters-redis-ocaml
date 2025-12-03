@@ -125,7 +125,7 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   | [ Resp.NullArray ] | [] -> Resp.NullArray
   | _ as l -> Resp.RespList l
 
-let multi () = Resp.SimpleString "Ok"
+let multi () = Resp.SimpleString "OK"
 
 let process (str : string) : Resp.t =
   let command = Resp.command str in
