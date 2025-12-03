@@ -1,6 +1,7 @@
 type t = int
 
 let to_resp (value : t) : Resp.t = Resp.Integer value
+let to_int (value : t) : int = value
 
 let set (value : t) (listener_count : int) (_existing : t option) :
     t Storeop.mutation_result =

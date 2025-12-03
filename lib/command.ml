@@ -2,17 +2,6 @@ open Base
 
 let process_ping () : Resp.t = Resp.SimpleString "PONG"
 
-let resp_from_store (item : Store.t) : Resp.t =
-  match item with
-  | Store.StorageInt i -> Ints.to_resp i
-  | Store.StorageString str -> Strings.to_resp str
-  | Store.StorageList l -> Lists.to_resp l
-  | Store.StorageStream _ -> Resp.SimpleString "OK"
-
-let get (key : string) : Resp.t =
-  let value = Store.get key in
-  match value with None -> Resp.Null | Some v -> resp_from_store v
-
 let store_to_list (storage_value : Store.t option) : Lists.t option =
   match storage_value with Some (StorageList l) -> Some l | _ -> None
 
@@ -40,6 +29,17 @@ let int_to_store (value : Ints.t option) : Store.t option =
 
 let string_to_store (str : Strings.t option) : Store.t option =
   match str with Some str -> Some (Store.StorageString str) | None -> None
+
+let resp_from_store (item : Store.t) : Resp.t =
+  match item with
+  | Store.StorageInt i -> Resp.BulkString (Ints.to_int i |> Int.to_string)
+  | Store.StorageString str -> Strings.to_resp str
+  | Store.StorageList l -> Lists.to_resp l
+  | Store.StorageStream _ -> Resp.SimpleString "OK"
+
+let get (key : string) : Resp.t =
+  let value = Store.get key in
+  match value with None -> Resp.Null | Some v -> resp_from_store v
 
 let set ~(expiry : (string * string) option) (key : string) (value : string) :
     Resp.t =
