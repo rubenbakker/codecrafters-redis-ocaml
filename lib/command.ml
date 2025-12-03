@@ -155,6 +155,7 @@ let process_command (command : string * string list) : Resp.t =
       xread rest (Some (Lifetime.create_expiry "px" timeout))
   | "xread", _ :: rest -> xread rest None
   | "exec", [] -> Resp.RespError "ERR EXEC without MULTI"
+  | "discard", [] -> Resp.RespError "ERR DISCARD without MULTI"
   | _ -> Resp.Null
 
 let exec (queue : command_queue_t) : Resp.t * command_queue_t =
@@ -171,6 +172,7 @@ let process_transaction_command (queue : command_t Queue.t)
   | "exec", [] -> exec (Some queue)
   | "multi", _ ->
       (Resp.RespError "ERR: nested transactions not supported", Some queue)
+  | "discard", _ -> (Resp.SimpleString "OK", None)
   | _ ->
       Queue.enqueue queue command;
       (Resp.SimpleString "QUEUED", Some queue)
