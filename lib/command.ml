@@ -126,6 +126,7 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   | _ as l -> Resp.RespList l
 
 let multi () = Resp.SimpleString "OK"
+let exec () = Resp.RespError "ERR EXEC without MULTI"
 
 let process (str : string) : Resp.t =
   let command = Resp.command str in
@@ -151,6 +152,5 @@ let process (str : string) : Resp.t =
       xread rest (Some (Lifetime.create_expiry "px" timeout))
   | "xread", _ :: rest -> xread rest None
   | "multi", [] -> multi ()
-  | _ ->
-      Stdlib.print_endline "invalid command";
-      Resp.Null
+  | "exec", [] -> exec ()
+  | _ -> Resp.Null
