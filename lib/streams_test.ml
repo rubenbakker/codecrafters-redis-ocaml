@@ -102,3 +102,11 @@ let%expect_test "xread blocking should wait forever" =
   in
   Stdio.print_endline (Lifetime.to_sexp result |> Sexp.to_string_hum);
   [%expect {| Forever |}]
+
+let%expect_test "xread blocking with $ id should wait forever" =
+  let result =
+    Streams.xread "key" "$" (Some Lifetime.Forever) (create_sample_stream ())
+    |> wait_of_result
+  in
+  Stdio.print_endline (Lifetime.to_sexp result |> Sexp.to_string_hum);
+  [%expect {| Forever |}]

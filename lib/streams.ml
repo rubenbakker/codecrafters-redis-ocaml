@@ -33,8 +33,10 @@ let parse_entry_id (id : string) (last_entry_id : id_t) :
       Ok { millis; sequence = new_sequence millis }
   | _ -> Error "Not a valid stream id"
 
-let parse_xrange_id (id : string) (id_type : xrange_id_t) : id_t =
+let parse_xrange_id (id : string) (last_id : id_t option)
+    (id_type : xrange_id_t) : id_t =
   match id with
+  | "$" -> ( match last_id with Some id -> id | None -> min_id)
   | "-" -> min_id
   | "+" -> max_id
   | _ -> (
@@ -48,7 +50,9 @@ let parse_xrange_id (id : string) (id_type : xrange_id_t) : id_t =
       | _ -> min_id)
 
 let%test_unit "parse xrange full" =
-  [%test_eq: id_t] (parse_xrange_id "15" FromId) { millis = 15; sequence = 0 }
+  [%test_eq: id_t]
+    (parse_xrange_id "15" None FromId)
+    { millis = 15; sequence = 0 }
 
 let validate_entry_id (id : id_t) (reference_id : id_t) :
     (id_t, string) Result.t =
@@ -116,8 +120,8 @@ let xrange (from_id : string) (to_id : string) (stream : t option) :
   Storeop.Value
     (match stream with
     | Some stream ->
-        let from_id = parse_xrange_id from_id FromId in
-        let to_id = parse_xrange_id to_id ToId in
+        let from_id = parse_xrange_id from_id None FromId in
+        let to_id = parse_xrange_id to_id None ToId in
         stream
         |> List.filter ~f:(fun entry ->
             compare_id_t entry.id from_id >= 0
@@ -129,7 +133,10 @@ let xread (key : string) (from_id : string) (timeout : Lifetime.t option)
     (stream : t option) : Storeop.query_result =
   match stream with
   | Some stream -> (
-      let from_id = parse_xrange_id from_id FromId in
+      let last_id =
+        match List.last stream with Some entry -> Some entry.id | None -> None
+      in
+      let from_id = parse_xrange_id from_id last_id FromId in
       stream |> List.filter ~f:(fun entry -> compare_id_t entry.id from_id > 0)
       |> fun l ->
       match (l, timeout) with
