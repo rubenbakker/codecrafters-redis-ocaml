@@ -134,7 +134,7 @@ let multi () : Resp.t * command_queue_t =
 let exec (queue : command_queue_t) : Resp.t * command_queue_t =
   match queue with
   | None -> (Resp.RespError "ERR EXEC without MULTI", None)
-  | Some queue -> (Resp.RespList [], Some queue)
+  | Some _ -> (Resp.RespList [], None)
 
 let process (command_queue : command_queue_t) (str : string) :
     Resp.t * command_queue_t =
@@ -143,6 +143,8 @@ let process (command_queue : command_queue_t) (str : string) :
   | Some queue -> (
       match command with
       | "exec", [] -> exec (Some queue)
+      | "multi", _ ->
+          (Resp.RespError "ERR: nested transactions not supported", Some queue)
       | _ ->
           Queue.enqueue queue str;
           (Resp.SimpleString "QUEUED", Some queue))
