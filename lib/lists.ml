@@ -42,14 +42,14 @@ let lrange (from_idx : string) (to_idx : string) (existing_list : t option) :
   in
   Storeop.Value resp
 
-let take (existing_list : t) (count : int) : Resp.t list * t =
+let take (existing_list : t) (count : int) : Resp.t list * t * int =
   let count = min count (List.length existing_list) in
   let resps =
     List.take existing_list count |> List.map ~f:(fun s -> Resp.BulkString s)
   in
   ( resps,
-    List.sub ~pos:count ~len:(List.length existing_list - count) existing_list
-  )
+    List.sub ~pos:count ~len:(List.length existing_list - count) existing_list,
+    List.length existing_list )
 
 let lpush (data : string list) (listener_count : int) (existing_list : t option)
     : t Storeop.mutation_result =
@@ -57,20 +57,20 @@ let lpush (data : string list) (listener_count : int) (existing_list : t option)
   let new_list =
     match existing_list with Some l -> values @ l | _ -> values
   in
-  let listener_resp_list, new_list = take new_list listener_count in
+  let listener_resp_list, new_list, count = take new_list listener_count in
   {
     store = Some new_list;
-    return = Resp.Integer (List.length new_list);
+    return = Resp.Integer count;
     notify_with = listener_resp_list;
   }
 
 let rpush (data : string list) (listener_count : int) (existing_list : t option)
     : t Storeop.mutation_result =
   let new_list = match existing_list with Some l -> l @ data | _ -> data in
-  let listener_resp_list, new_list = take new_list listener_count in
+  let listener_resp_list, new_list, count = take new_list listener_count in
   {
     store = Some new_list;
-    return = Resp.Integer (List.length new_list);
+    return = Resp.Integer count;
     notify_with = listener_resp_list;
   }
 
