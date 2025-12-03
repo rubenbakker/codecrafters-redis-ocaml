@@ -1,5 +1,8 @@
 open Base
 
+type command_queue_t = string Queue.t option
+
+let empty_command_queue () : command_queue_t = None
 let process_ping () : Resp.t = Resp.SimpleString "PONG"
 
 let store_to_list (storage_value : Store.t option) : Lists.t option =
@@ -125,32 +128,51 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   | [ Resp.NullArray ] | [] -> Resp.NullArray
   | _ as l -> Resp.RespList l
 
-let multi () = Resp.SimpleString "OK"
-let exec () = Resp.RespError "ERR EXEC without MULTI"
+let multi () : Resp.t * command_queue_t =
+  (Resp.SimpleString "OK", Some (Queue.create ()))
 
-let process (str : string) : Resp.t =
+let exec (queue : command_queue_t) : Resp.t * command_queue_t =
+  match queue with
+  | None -> (Resp.RespError "ERR EXEC without MULTI", None)
+  | Some queue -> (Resp.RespList [], Some queue)
+
+let process (command_queue : command_queue_t) (str : string) :
+    Resp.t * command_queue_t =
   let command = Resp.command str in
-  match command with
-  | "ping", [] -> process_ping ()
-  | "set", [ key; value ] -> set key value ~expiry:None
-  | "set", [ key; value; expiry_type; expiry_value ] ->
-      set ~expiry:(Some (expiry_type, expiry_value)) key value
-  | "incr", [ key ] -> incr key
-  | "get", [ key ] -> get key
-  | "rpush", key :: rest -> rpush key rest
-  | "lpush", key :: rest -> lpush key rest
-  | "lrange", [ key; from_idx; to_idx ] -> lrange key from_idx to_idx
-  | "llen", [ key ] -> llen key
-  | "lpop", [ key ] -> lpop key 1
-  | "lpop", [ key; count ] -> lpop key (Int.of_string count)
-  | "blpop", [ key; timeout ] -> blpop key timeout
-  | "type", [ key ] -> type_cmd key
-  | "echo", [ message ] -> echo message
-  | "xadd", key :: id :: rest -> xadd key id rest
-  | "xrange", [ key; from_id; to_id ] -> xrange key from_id to_id
-  | "xread", "block" :: timeout :: "streams" :: rest ->
-      xread rest (Some (Lifetime.create_expiry "px" timeout))
-  | "xread", _ :: rest -> xread rest None
-  | "multi", [] -> multi ()
-  | "exec", [] -> exec ()
-  | _ -> Resp.Null
+  match command_queue with
+  | Some queue -> (
+      match command with
+      | "exec", [] -> exec (Some queue)
+      | _ ->
+          Queue.enqueue queue str;
+          (Resp.SimpleString "QUEUED", Some queue))
+  | None -> (
+      match command with
+      | "multi", [] -> multi ()
+      | _ ->
+          let result =
+            match command with
+            | "ping", [] -> process_ping ()
+            | "set", [ key; value ] -> set key value ~expiry:None
+            | "set", [ key; value; expiry_type; expiry_value ] ->
+                set ~expiry:(Some (expiry_type, expiry_value)) key value
+            | "incr", [ key ] -> incr key
+            | "get", [ key ] -> get key
+            | "rpush", key :: rest -> rpush key rest
+            | "lpush", key :: rest -> lpush key rest
+            | "lrange", [ key; from_idx; to_idx ] -> lrange key from_idx to_idx
+            | "llen", [ key ] -> llen key
+            | "lpop", [ key ] -> lpop key 1
+            | "lpop", [ key; count ] -> lpop key (Int.of_string count)
+            | "blpop", [ key; timeout ] -> blpop key timeout
+            | "type", [ key ] -> type_cmd key
+            | "echo", [ message ] -> echo message
+            | "xadd", key :: id :: rest -> xadd key id rest
+            | "xrange", [ key; from_id; to_id ] -> xrange key from_id to_id
+            | "xread", "block" :: timeout :: "streams" :: rest ->
+                xread rest (Some (Lifetime.create_expiry "px" timeout))
+            | "xread", _ :: rest -> xread rest None
+            | "exec", [] -> Resp.RespError "ERR EXEC without MULTI"
+            | _ -> Resp.Null
+          in
+          (result, None))
