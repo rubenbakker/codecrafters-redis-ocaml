@@ -12,10 +12,9 @@ let create_expiry (expiry_type : string) (expiry_value : string) : t =
   let expiry_value =
     match String.lowercase expiry_type with
     | "ex" -> expiry_value * 1000
-    | "px" -> expiry_value
-    | _ -> 0
+    | "px" | _ -> expiry_value
   in
-  Expires expiry_value
+  match expiry_value with 0 -> Forever | _ as v -> Expires v
 
 let has_expired (current_time : int) (lifetime : t) : bool =
   match lifetime with Forever -> false | Expires time -> time < current_time
