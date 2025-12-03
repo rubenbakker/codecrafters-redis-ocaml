@@ -1,6 +1,7 @@
 open Base
 
-type command_queue_t = string Queue.t option
+type command_t = string * string list
+type command_queue_t = command_t Queue.t option
 
 let empty_command_queue () : command_queue_t = None
 let process_ping () : Resp.t = Resp.SimpleString "PONG"
@@ -131,50 +132,55 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
 let multi () : Resp.t * command_queue_t =
   (Resp.SimpleString "OK", Some (Queue.create ()))
 
+let process_command (command : string * string list) : Resp.t =
+  match command with
+  | "ping", [] -> process_ping ()
+  | "set", [ key; value ] -> set key value ~expiry:None
+  | "set", [ key; value; expiry_type; expiry_value ] ->
+      set ~expiry:(Some (expiry_type, expiry_value)) key value
+  | "incr", [ key ] -> incr key
+  | "get", [ key ] -> get key
+  | "rpush", key :: rest -> rpush key rest
+  | "lpush", key :: rest -> lpush key rest
+  | "lrange", [ key; from_idx; to_idx ] -> lrange key from_idx to_idx
+  | "llen", [ key ] -> llen key
+  | "lpop", [ key ] -> lpop key 1
+  | "lpop", [ key; count ] -> lpop key (Int.of_string count)
+  | "blpop", [ key; timeout ] -> blpop key timeout
+  | "type", [ key ] -> type_cmd key
+  | "echo", [ message ] -> echo message
+  | "xadd", key :: id :: rest -> xadd key id rest
+  | "xrange", [ key; from_id; to_id ] -> xrange key from_id to_id
+  | "xread", "block" :: timeout :: "streams" :: rest ->
+      xread rest (Some (Lifetime.create_expiry "px" timeout))
+  | "xread", _ :: rest -> xread rest None
+  | "exec", [] -> Resp.RespError "ERR EXEC without MULTI"
+  | _ -> Resp.Null
+
 let exec (queue : command_queue_t) : Resp.t * command_queue_t =
   match queue with
   | None -> (Resp.RespError "ERR EXEC without MULTI", None)
-  | Some _ -> (Resp.RespList [], None)
+  | Some queue ->
+      Queue.to_list queue
+      |> List.map ~f:(fun command -> process_command command)
+      |> fun list_of_resp -> (Resp.RespList list_of_resp, None)
+
+let process_transaction_command (queue : command_t Queue.t)
+    (command : string * string list) : Resp.t * command_queue_t =
+  match command with
+  | "exec", [] -> exec (Some queue)
+  | "multi", _ ->
+      (Resp.RespError "ERR: nested transactions not supported", Some queue)
+  | _ ->
+      Queue.enqueue queue command;
+      (Resp.SimpleString "QUEUED", Some queue)
 
 let process (command_queue : command_queue_t) (str : string) :
     Resp.t * command_queue_t =
   let command = Resp.command str in
   match command_queue with
-  | Some queue -> (
-      match command with
-      | "exec", [] -> exec (Some queue)
-      | "multi", _ ->
-          (Resp.RespError "ERR: nested transactions not supported", Some queue)
-      | _ ->
-          Queue.enqueue queue str;
-          (Resp.SimpleString "QUEUED", Some queue))
+  | Some queue -> process_transaction_command queue command
   | None -> (
       match command with
       | "multi", [] -> multi ()
-      | _ ->
-          let result =
-            match command with
-            | "ping", [] -> process_ping ()
-            | "set", [ key; value ] -> set key value ~expiry:None
-            | "set", [ key; value; expiry_type; expiry_value ] ->
-                set ~expiry:(Some (expiry_type, expiry_value)) key value
-            | "incr", [ key ] -> incr key
-            | "get", [ key ] -> get key
-            | "rpush", key :: rest -> rpush key rest
-            | "lpush", key :: rest -> lpush key rest
-            | "lrange", [ key; from_idx; to_idx ] -> lrange key from_idx to_idx
-            | "llen", [ key ] -> llen key
-            | "lpop", [ key ] -> lpop key 1
-            | "lpop", [ key; count ] -> lpop key (Int.of_string count)
-            | "blpop", [ key; timeout ] -> blpop key timeout
-            | "type", [ key ] -> type_cmd key
-            | "echo", [ message ] -> echo message
-            | "xadd", key :: id :: rest -> xadd key id rest
-            | "xrange", [ key; from_id; to_id ] -> xrange key from_id to_id
-            | "xread", "block" :: timeout :: "streams" :: rest ->
-                xread rest (Some (Lifetime.create_expiry "px" timeout))
-            | "xread", _ :: rest -> xread rest None
-            | "exec", [] -> Resp.RespError "ERR EXEC without MULTI"
-            | _ -> Resp.Null
-          in
-          (result, None))
+      | _ -> (process_command command, None))
