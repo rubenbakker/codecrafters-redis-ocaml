@@ -57,7 +57,16 @@ let set ~(expiry : (string * string) option) (key : string) (value : string) :
         (Strings.set value)
 
 let incr (key : string) : Resp.t =
-  Store.mutate key Lifetime.Forever store_to_int int_to_store Ints.incr
+  let valid =
+    match Store.get key with
+    | None -> true
+    | Some (StorageInt _) -> true
+    | _ -> false
+  in
+  match valid with
+  | true ->
+      Store.mutate key Lifetime.Forever store_to_int int_to_store Ints.incr
+  | false -> Resp.RespError "ERR value is not an integer or out of range"
 
 let rpush (key : string) (rest : string list) : Resp.t =
   Store.mutate key Lifetime.Forever store_to_list list_to_store
