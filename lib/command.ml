@@ -86,7 +86,15 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   List.zip_exn keys from_ids
   |> List.map ~f:(fun (key, from_id) ->
       Store.query key store_to_stream (Streams.xread key from_id timeout))
-  |> fun l -> Resp.RespList l
+  |> fun l ->
+  let result =
+    match l with
+    | [ Resp.NullArray ] | [] -> Resp.NullArray
+    | _ as l -> Resp.RespList l
+  in
+  Stdlib.print_endline ">>> result of xread <<<";
+  Resp.to_sexp result |> Sexp.to_string |> Stdlib.print_endline;
+  result
 
 let process (str : string) : Resp.t =
   let command = Resp.command str in
