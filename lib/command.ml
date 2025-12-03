@@ -87,14 +87,9 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   |> List.map ~f:(fun (key, from_id) ->
       Store.query key store_to_stream (Streams.xread key from_id timeout))
   |> fun l ->
-  let result =
-    match l with
-    | [ Resp.NullArray ] | [] -> Resp.NullArray
-    | _ as l -> Resp.RespList l
-  in
-  Stdlib.print_endline ">>> result of xread <<<";
-  Resp.to_sexp result |> Sexp.to_string |> Stdlib.print_endline;
-  result
+  match l with
+  | [ Resp.NullArray ] | [] -> Resp.NullArray
+  | _ as l -> Resp.RespList l
 
 let process (str : string) : Resp.t =
   let command = Resp.command str in
@@ -118,4 +113,6 @@ let process (str : string) : Resp.t =
   | "xread", "block" :: timeout :: "streams" :: rest ->
       xread rest (Some (Lifetime.create_expiry "px" timeout))
   | "xread", _ :: rest -> xread rest None
-  | _ -> Resp.Null
+  | _ ->
+      Stdlib.print_endline "invalid command";
+      Resp.Null

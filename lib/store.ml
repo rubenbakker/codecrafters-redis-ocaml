@@ -58,8 +58,11 @@ let queue_listener (key : string) (timeout : Lifetime.t) : listener =
 
 let wait_result (outcome : wait_result) =
   match outcome with
-  | ValueResult v -> v
+  | ValueResult v ->
+      Stdlib.print_endline ">>> value result";
+      v
   | WaitResult (listener, convert) ->
+      Stdlib.print_endline ">>> waiting...";
       Stdlib.Condition.wait listener.condition listener.lock;
       protect (fun () ->
           match listener.result with
