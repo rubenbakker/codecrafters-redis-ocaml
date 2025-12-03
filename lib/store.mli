@@ -1,5 +1,6 @@
 type t =
-  | StorageString of string
+  | StorageInt of Ints.t
+  | StorageString of Strings.t
   | StorageList of Lists.t
   | StorageStream of Streams.t
 
@@ -15,6 +16,7 @@ val pop_list_or_wait :
 
 val mutate :
   string ->
+  Lifetime.t ->
   (t option -> 'a option) ->
   ('a option -> t option) ->
   (int -> 'a option -> 'a Storeop.mutation_result) ->

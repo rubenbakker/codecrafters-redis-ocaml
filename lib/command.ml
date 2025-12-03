@@ -2,20 +2,10 @@ open Base
 
 let process_ping () : Resp.t = Resp.SimpleString "PONG"
 
-let set ~(expiry : (string * string) option) (key : string) (value : string) :
-    Resp.t =
-  let expiry =
-    match expiry with
-    | Some (expiry_type, expiry_value) ->
-        Lifetime.create_expiry expiry_type expiry_value
-    | None -> Lifetime.Forever
-  in
-  Store.set key (Store.StorageString value) expiry;
-  Resp.SimpleString "OK"
-
 let resp_from_store (item : Store.t) : Resp.t =
   match item with
-  | Store.StorageString str -> Resp.BulkString str
+  | Store.StorageInt i -> Ints.to_resp i
+  | Store.StorageString str -> Strings.to_resp str
   | Store.StorageList l -> Lists.to_resp l
   | Store.StorageStream _ -> Resp.SimpleString "OK"
 
@@ -31,6 +21,12 @@ let store_to_stream (storage_value : Store.t option) : Streams.t option =
   | Some (StorageStream stream) -> Some stream
   | _ -> None
 
+let store_to_int (storage_value : Store.t option) : Ints.t option =
+  match storage_value with Some (StorageInt i) -> Some i | _ -> None
+
+let store_to_string (storage_value : Store.t option) : Strings.t option =
+  match storage_value with Some (StorageString str) -> Some str | _ -> None
+
 let stream_to_store (stream : Streams.t option) : Store.t option =
   match stream with
   | Some stream -> Some (Store.StorageStream stream)
@@ -39,11 +35,37 @@ let stream_to_store (stream : Streams.t option) : Store.t option =
 let list_to_store (l : Lists.t option) : Store.t option =
   match l with Some l -> Some (Store.StorageList l) | None -> None
 
+let int_to_store (value : Ints.t option) : Store.t option =
+  match value with Some i -> Some (Store.StorageInt i) | None -> None
+
+let string_to_store (str : Strings.t option) : Store.t option =
+  match str with Some str -> Some (Store.StorageString str) | None -> None
+
+let set ~(expiry : (string * string) option) (key : string) (value : string) :
+    Resp.t =
+  let lifetime =
+    match expiry with
+    | Some (expiry_type, expiry_value) ->
+        Lifetime.create_expiry expiry_type expiry_value
+    | None -> Lifetime.Forever
+  in
+  match Int.of_string_opt value with
+  | Some value ->
+      Store.mutate key lifetime store_to_int int_to_store (Ints.set value)
+  | None ->
+      Store.mutate key lifetime store_to_string string_to_store
+        (Strings.set value)
+
+let incr (key : string) : Resp.t =
+  Store.mutate key Lifetime.Forever store_to_int int_to_store Ints.incr
+
 let rpush (key : string) (rest : string list) : Resp.t =
-  Store.mutate key store_to_list list_to_store (Lists.rpush rest)
+  Store.mutate key Lifetime.Forever store_to_list list_to_store
+    (Lists.rpush rest)
 
 let lpush (key : string) (rest : string list) =
-  Store.mutate key store_to_list list_to_store (Lists.lpush rest)
+  Store.mutate key Lifetime.Forever store_to_list list_to_store
+    (Lists.lpush rest)
 
 let lrange (key : string) (from_idx : string) (to_idx : string) : Resp.t =
   Store.query key store_to_list (Lists.lrange from_idx to_idx)
@@ -51,7 +73,8 @@ let lrange (key : string) (from_idx : string) (to_idx : string) : Resp.t =
 let llen (key : string) : Resp.t = Store.query key store_to_list Lists.llen
 
 let lpop (key : string) (count : int) : Resp.t =
-  Store.mutate key store_to_list list_to_store (Lists.lpop count)
+  Store.mutate key Lifetime.Forever store_to_list list_to_store
+    (Lists.lpop count)
 
 let blpop (key : string) (timeout : string) : Resp.t =
   let timeout =
@@ -66,6 +89,7 @@ let type_cmd (key : string) : Resp.t =
     | None -> "none"
     | Some v -> (
         match v with
+        | Store.StorageInt _ -> "integer"
         | Store.StorageList _ -> "list"
         | Store.StorageString _ -> "string"
         | Store.StorageStream _ -> "stream"))
@@ -74,7 +98,8 @@ let type_cmd (key : string) : Resp.t =
 let echo (message : string) : Resp.t = Resp.BulkString message
 
 let xadd (key : string) (id : string) (rest : string list) : Resp.t =
-  Store.mutate key store_to_stream stream_to_store (Streams.xadd id rest)
+  Store.mutate key Lifetime.Forever store_to_stream stream_to_store
+    (Streams.xadd id rest)
 
 let xrange (key : string) (from_id : string) (to_id : string) : Resp.t =
   Store.query key store_to_stream (Streams.xrange from_id to_id)
@@ -98,6 +123,7 @@ let process (str : string) : Resp.t =
   | "set", [ key; value ] -> set key value ~expiry:None
   | "set", [ key; value; expiry_type; expiry_value ] ->
       set ~expiry:(Some (expiry_type, expiry_value)) key value
+  | "incr", [ key ] -> incr key
   | "get", [ key ] -> get key
   | "rpush", key :: rest -> rpush key rest
   | "lpush", key :: rest -> lpush key rest

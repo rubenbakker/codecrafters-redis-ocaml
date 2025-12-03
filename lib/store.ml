@@ -3,7 +3,8 @@ module StringMap = Stdlib.Map.Make (String)
 
 (** storage value type *)
 type t =
-  | StorageString of string
+  | StorageInt of Ints.t
+  | StorageString of Strings.t
   | StorageList of Lists.t
   | StorageStream of Streams.t
 
@@ -129,8 +130,8 @@ let query (key : string) (convert : t option -> 'a option)
   in
   wait_result outcome
 
-let mutate (key : string) (from_store : 't option -> 'a option)
-    (to_store : 'a option -> t option)
+let mutate (key : string) (lifetime : Lifetime.t)
+    (from_store : 't option -> 'a option) (to_store : 'a option -> t option)
     (fn : int -> 'a option -> 'a Storeop.mutation_result) : Resp.t =
   protect (fun () ->
       let listener_queue = StringMap.find_opt key !listeners in
@@ -140,7 +141,7 @@ let mutate (key : string) (from_store : 't option -> 'a option)
       let result = get_no_lock key |> from_store |> fn queue_length in
       (match to_store result.store with
       | Some store_data -> (
-          set_no_lock key store_data Lifetime.Forever;
+          set_no_lock key store_data lifetime;
           match listener_queue with
           | Some lq -> notify_listeners lq result.notify_with
           | None -> ())
