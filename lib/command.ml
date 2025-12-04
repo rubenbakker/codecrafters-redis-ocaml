@@ -134,7 +134,11 @@ let info (args : string list) : Resp.t =
   match args with
   | [ "replication" ] -> (
       match options.role with
-      | Master -> Resp.BulkString "role:master"
+      | Master ->
+          Resp.BulkString
+            "role:master\r\n\
+             master_repl_offset:0\r\n\
+             master_replid:8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb\r\n"
       | Slave _ -> Resp.BulkString "role:slave")
   | _ -> Resp.RespError "ERR Unknown role"
 
