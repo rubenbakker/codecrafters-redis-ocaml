@@ -145,6 +145,8 @@ let info (args : string list) : Resp.t =
 let multi () : Resp.t * command_queue_t =
   (Resp.SimpleString "OK", Some (Queue.create ()))
 
+let replconf (_args : string list) : Resp.t = Resp.SimpleString "OK"
+
 let process_command (command : string * string list) : Resp.t =
   match command with
   | "ping", [] -> process_ping ()
@@ -169,6 +171,7 @@ let process_command (command : string * string list) : Resp.t =
   | "xread", _ :: rest -> xread rest None
   | "exec", [] -> Resp.RespError "ERR EXEC without MULTI"
   | "discard", [] -> Resp.RespError "ERR DISCARD without MULTI"
+  | "replconf", rest -> replconf rest
   | "info", rest -> info rest
   | _ -> Resp.Null
 

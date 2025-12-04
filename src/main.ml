@@ -31,20 +31,34 @@ let rec accept_loop server_socket threads =
   let thread = Thread.create run_and_close_client client_socket in
   accept_loop server_socket (thread :: threads)
 
+let send_resp_to_socket sock (payload : Resp.t) =
+  let payload = payload |> Resp.to_string |> Bytes.of_string in
+  ignore (write sock payload 0 (Bytes.length payload))
+
 let init_slave (host : string) (port : int) =
   let hostaddr =
     try inet_addr_of_string host
     with Failure _ -> (
       try (gethostbyname host).h_addr_list.(0) with _ -> assert false)
   in
-  let payload =
-    Resp.RespList [ Resp.BulkString "PING" ] |> Resp.to_string
-    |> Bytes.of_string
-  in
   let sock = socket PF_INET SOCK_STREAM 0 in
-  Stdlib.print_endline host;
   connect sock (ADDR_INET (hostaddr, port));
-  ignore (write sock payload 0 (Bytes.length payload));
+  Resp.RespList [ Resp.BulkString "PING" ] |> send_resp_to_socket sock;
+  Resp.RespList
+    [
+      Resp.BulkString "REPLCONF";
+      Resp.BulkString "listening-port";
+      Resp.BulkString (Int.to_string port);
+    ]
+  |> send_resp_to_socket sock;
+  Resp.RespList
+    [
+      Resp.BulkString "REPLCONF";
+      Resp.BulkString "capa";
+      Resp.BulkString "psync2";
+    ]
+  |> send_resp_to_socket sock;
+
   ignore (close sock)
 
 let () =
