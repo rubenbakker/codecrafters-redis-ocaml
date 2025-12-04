@@ -33,7 +33,8 @@ let rec accept_loop server_socket threads =
 
 let send_resp_to_socket sock (payload : Resp.t) =
   let payload = payload |> Resp.to_string |> Bytes.of_string in
-  ignore (write sock payload 0 (Bytes.length payload))
+  ignore (write sock payload 0 (Bytes.length payload));
+  ignore (Unix.read sock (Bytes.create 512) 0 512)
 
 let init_slave (host : string) (port : int) =
   let hostaddr =
@@ -68,8 +69,8 @@ let () =
   setsockopt server_socket SO_REUSEADDR true;
   bind server_socket (ADDR_INET (inet_addr_of_string "127.0.0.1", options.port));
   listen server_socket 10;
-  let _ = Store.start_gc () in
-  let _ = Store.start_expire_listeners () in
+  ignore (Store.start_gc ());
+  ignore (Store.start_expire_listeners ());
   (match options.role with
   | Slave (host, port) -> init_slave host port
   | Master -> ());
