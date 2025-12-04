@@ -129,6 +129,11 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   | [ Resp.NullArray ] | [] -> Resp.NullArray
   | _ as l -> Resp.RespList l
 
+let info (args : string list) : Resp.t =
+  match args with
+  | [ "replication" ] -> Resp.BulkString "role:master"
+  | _ -> Resp.RespError "ERR Unknown role"
+
 let multi () : Resp.t * command_queue_t =
   (Resp.SimpleString "OK", Some (Queue.create ()))
 
@@ -156,6 +161,7 @@ let process_command (command : string * string list) : Resp.t =
   | "xread", _ :: rest -> xread rest None
   | "exec", [] -> Resp.RespError "ERR EXEC without MULTI"
   | "discard", [] -> Resp.RespError "ERR DISCARD without MULTI"
+  | "info", rest -> info rest
   | _ -> Resp.Null
 
 let exec (queue : command_queue_t) : Resp.t * command_queue_t =
