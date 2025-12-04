@@ -36,7 +36,7 @@ let send_resp_to_socket sock (payload : Resp.t) =
   ignore (write sock payload 0 (Bytes.length payload));
   ignore (Unix.read sock (Bytes.create 512) 0 512)
 
-let init_slave (host : string) (port : int) =
+let init_slave (host : string) (port : int) (slave_port : int) =
   let hostaddr =
     try inet_addr_of_string host
     with Failure _ -> (
@@ -49,7 +49,7 @@ let init_slave (host : string) (port : int) =
     [
       Resp.BulkString "REPLCONF";
       Resp.BulkString "listening-port";
-      Resp.BulkString (Int.to_string port);
+      Resp.BulkString (Int.to_string slave_port);
     ]
   |> send_resp_to_socket sock;
   Resp.RespList
@@ -72,7 +72,7 @@ let () =
   ignore (Store.start_gc ());
   ignore (Store.start_expire_listeners ());
   (match options.role with
-  | Slave (host, port) -> init_slave host port
+  | Slave (host, port) -> init_slave host port options.port
   | Master -> ());
   try accept_loop server_socket []
   with e ->
