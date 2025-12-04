@@ -31,10 +31,15 @@ let rec accept_loop server_socket threads =
   let thread = Thread.create run_and_close_client client_socket in
   accept_loop server_socket (thread :: threads)
 
-let send_resp_to_socket sock (payload : Resp.t) =
+let send_to_master sock (payload : Resp.t) : Resp.t =
   let payload = payload |> Resp.to_string |> Bytes.of_string in
   ignore (write sock payload 0 (Bytes.length payload));
-  ignore (Unix.read sock (Bytes.create 512) 0 512)
+  let buf = Bytes.create 512 in
+  ignore (Unix.read sock buf 0 512);
+  Resp.from_string (Bytes.to_string buf) 0
+
+let create_command (args : string list) : Resp.t =
+  args |> List.map ~f:(fun a -> Resp.BulkString a) |> fun l -> Resp.RespList l
 
 let init_slave (host : string) (port : int) (slave_port : int) =
   let hostaddr =
@@ -44,22 +49,12 @@ let init_slave (host : string) (port : int) (slave_port : int) =
   in
   let sock = socket PF_INET SOCK_STREAM 0 in
   connect sock (ADDR_INET (hostaddr, port));
-  Resp.RespList [ Resp.BulkString "PING" ] |> send_resp_to_socket sock;
-  Resp.RespList
-    [
-      Resp.BulkString "REPLCONF";
-      Resp.BulkString "listening-port";
-      Resp.BulkString (Int.to_string slave_port);
-    ]
-  |> send_resp_to_socket sock;
-  Resp.RespList
-    [
-      Resp.BulkString "REPLCONF";
-      Resp.BulkString "capa";
-      Resp.BulkString "psync2";
-    ]
-  |> send_resp_to_socket sock;
-
+  ignore (create_command [ "PING" ] |> send_to_master sock);
+  ignore
+    (create_command [ "REPLCONF"; "listening-port"; Int.to_string slave_port ]
+    |> send_to_master sock);
+  ignore (create_command [ "REPLCONF"; "capa"; "psync2" ] |> send_to_master sock);
+  ignore (create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master sock);
   ignore (close sock)
 
 let () =

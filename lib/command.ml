@@ -146,6 +146,7 @@ let multi () : Resp.t * command_queue_t =
   (Resp.SimpleString "OK", Some (Queue.create ()))
 
 let replconf (_args : string list) : Resp.t = Resp.SimpleString "OK"
+let psync (_args : string list) : Resp.t = Resp.SimpleString "FULLRESYNC 0 0"
 
 let process_command (command : string * string list) : Resp.t =
   match command with
@@ -172,6 +173,7 @@ let process_command (command : string * string list) : Resp.t =
   | "exec", [] -> Resp.RespError "ERR EXEC without MULTI"
   | "discard", [] -> Resp.RespError "ERR DISCARD without MULTI"
   | "replconf", rest -> replconf rest
+  | "psync", rest -> psync rest
   | "info", rest -> info rest
   | _ -> Resp.Null
 
