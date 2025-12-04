@@ -146,7 +146,9 @@ let multi () : Resp.t * command_queue_t =
   (Resp.SimpleString "OK", Some (Queue.create ()))
 
 let replconf (_args : string list) : Resp.t = Resp.SimpleString "OK"
-let psync (_args : string list) : Resp.t = Resp.SimpleString "FULLRESYNC 0 0"
+
+let psync (_args : string list) : Resp.t =
+  Resp.SimpleString "FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0"
 
 let process_command (command : string * string list) : Resp.t =
   match command with
