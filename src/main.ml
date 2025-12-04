@@ -31,6 +31,22 @@ let rec accept_loop server_socket threads =
   let thread = Thread.create run_and_close_client client_socket in
   accept_loop server_socket (thread :: threads)
 
+let init_slave (host : string) (port : int) =
+  let hostaddr =
+    try inet_addr_of_string host
+    with Failure _ -> (
+      try (gethostbyname host).h_addr_list.(0) with _ -> assert false)
+  in
+  let payload =
+    Resp.RespList [ Resp.BulkString "PING" ] |> Resp.to_string
+    |> Bytes.of_string
+  in
+  let sock = socket PF_INET SOCK_STREAM 0 in
+  Stdlib.print_endline host;
+  connect sock (ADDR_INET (hostaddr, port));
+  ignore (write sock payload 0 (Bytes.length payload));
+  ignore (close sock)
+
 let () =
   (* Create a TCP server socket *)
   let options = Options.parse_options (Sys.get_argv ()) in
@@ -40,6 +56,9 @@ let () =
   listen server_socket 10;
   let _ = Store.start_gc () in
   let _ = Store.start_expire_listeners () in
+  (match options.role with
+  | Slave (host, port) -> init_slave host port
+  | Master -> ());
   try accept_loop server_socket []
   with e ->
     close server_socket;
