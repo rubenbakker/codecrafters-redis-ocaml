@@ -33,14 +33,10 @@ let rec accept_loop server_socket threads =
 
 let () =
   (* Create a TCP server socket *)
-  let port_number =
-    match Sys.get_argv () with
-    | [| _; "--port"; port |] -> Int.of_string port
-    | _ -> 6379
-  in
+  let options = Options.parse_options (Sys.get_argv ()) in
   let server_socket = socket PF_INET SOCK_STREAM 0 in
   setsockopt server_socket SO_REUSEADDR true;
-  bind server_socket (ADDR_INET (inet_addr_of_string "127.0.0.1", port_number));
+  bind server_socket (ADDR_INET (inet_addr_of_string "127.0.0.1", options.port));
   listen server_socket 10;
   let _ = Store.start_gc () in
   let _ = Store.start_expire_listeners () in

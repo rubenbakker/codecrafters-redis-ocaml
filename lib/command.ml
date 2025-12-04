@@ -130,8 +130,12 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   | _ as l -> Resp.RespList l
 
 let info (args : string list) : Resp.t =
+  let options = Options.parse_options (Sys.get_argv ()) in
   match args with
-  | [ "replication" ] -> Resp.BulkString "role:master"
+  | [ "replication" ] -> (
+      match options.role with
+      | Master -> Resp.BulkString "role:master"
+      | Slave _ -> Resp.BulkString "role:slave")
   | _ -> Resp.RespError "ERR Unknown role"
 
 let multi () : Resp.t * command_queue_t =
