@@ -99,13 +99,13 @@ let blpop (key : string) (timeout : string) : Resp.t =
 
 let type_cmd (key : string) : Resp.t =
   (match Store.get key with
-    | None -> "none"
-    | Some v -> (
-        match v with
-        | Store.StorageInt _ -> "integer"
-        | Store.StorageList _ -> "list"
-        | Store.StorageString _ -> "string"
-        | Store.StorageStream _ -> "stream"))
+  | None -> "none"
+  | Some v -> (
+      match v with
+      | Store.StorageInt _ -> "integer"
+      | Store.StorageList _ -> "list"
+      | Store.StorageString _ -> "string"
+      | Store.StorageStream _ -> "stream"))
   |> fun v -> Resp.SimpleString v
 
 let echo (message : string) : Resp.t = Resp.BulkString message
@@ -123,7 +123,7 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   let from_ids = List.sub rest ~pos:count ~len:(List.length rest - count) in
   List.zip_exn keys from_ids
   |> List.map ~f:(fun (key, from_id) ->
-      Store.query key store_to_stream (Streams.xread key from_id timeout))
+         Store.query key store_to_stream (Streams.xread key from_id timeout))
   |> fun l ->
   match l with
   | [ Resp.NullArray ] | [] -> Resp.NullArray
@@ -148,7 +148,19 @@ let multi () : Resp.t * command_queue_t =
 let replconf (_args : string list) : Resp.t = Resp.SimpleString "OK"
 
 let psync (_args : string list) : Resp.t =
-  Resp.SimpleString "FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0"
+  let decoded_rdb_result =
+    Base64.decode
+      "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
+  in
+  match decoded_rdb_result with
+  | Ok empty_rdb ->
+      Resp.RespConcat
+        [
+          Resp.SimpleString
+            "FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0";
+          Resp.RespBinary empty_rdb;
+        ]
+  | Error _ -> Resp.RespError "ERR Decoding empty RDB file"
 
 let process_command (command : string * string list) : Resp.t =
   match command with

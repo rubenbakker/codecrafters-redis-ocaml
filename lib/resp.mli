@@ -7,6 +7,8 @@ type t =
   | Integer of int
   | Null
   | NullArray
+  | RespBinary of string
+  | RespConcat of t list
   | RespError of string
 
 val from_string : string -> int -> t

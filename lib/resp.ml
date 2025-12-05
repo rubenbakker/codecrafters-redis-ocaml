@@ -7,6 +7,8 @@ type t =
   | Integer of int
   | Null
   | NullArray
+  | RespBinary of string
+  | RespConcat of t list
   | RespError of string
 [@@deriving compare, equal, sexp]
 
@@ -70,6 +72,9 @@ let rec to_string (item : t) : string =
         (String.concat ~sep:"" (List.map ~f:(fun x -> to_string x) list))
   | Null -> null_string
   | NullArray -> "*-1\r\n"
+  | RespBinary str -> Printf.sprintf "$%d\r\n%s" (String.length str) str
+  | RespConcat list ->
+      String.concat ~sep:"" (List.map ~f:(fun x -> to_string x) list)
   | RespError error -> Printf.sprintf "-%s\r\n" error
 
 let to_sexp (input : t) : Sexp.t = sexp_of_t input
@@ -82,6 +87,8 @@ let arg arg =
   | RespList _ -> ""
   | NullArray -> ""
   | Null -> ""
+  | RespBinary _str -> ""
+  | RespConcat _l -> ""
   | RespError error -> error
 
 let command (str : string) : string * string list =
@@ -112,6 +119,14 @@ let%test_unit "from_string bulk string" =
 
 let%test_unit "to_string bulk string" =
   [%test_eq: string] (to_string (BulkString "Hey")) "$3\r\nHey\r\n"
+
+let%test_unit "to_string binary" =
+  [%test_eq: string] (to_string (RespBinary "Hey")) "$3\r\nHey"
+
+let%test_unit "to_string concat" =
+  [%test_eq: string]
+    (to_string (RespConcat [ BulkString "Hey"; RespBinary "xxx" ]))
+    "$3\r\nHey\r\n$3\r\nxxx"
 
 let%test_unit "to_string simple string" =
   [%test_eq: string] (to_string (SimpleString "Hey")) "+Hey\r\n"

@@ -2,7 +2,7 @@
 
 (library
  (name lib)
- (libraries base unix threads str)
+ (libraries base unix threads str base64)
  (inline_tests)
  (preprocess
   (pps ppx_assert ppx_inline_test ppx_expect ppx_sexp_conv ppx_compare)))
