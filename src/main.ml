@@ -45,6 +45,8 @@ let rec process_slave client_socket (context : Command.context_t) : unit =
     let buf = Bytes.create 2024 in
     let bytes_read = Unix.read client_socket buf 0 2024 in
     let command_string = Bytes.to_string buf in
+    Stdlib.print_endline "Slave received";
+    Stdlib.print_endline command_string;
     if bytes_read > 0 then
       ignore
         ((match Command.parse_command_line command_string with
@@ -54,9 +56,7 @@ let rec process_slave client_socket (context : Command.context_t) : unit =
              in
              Stdlib.print_endline "sneding result to master";
              ignore (send_to_master client_socket result)
-         | _ ->
-             Stdlib.print_endline command_string;
-             ignore (Command.process context command_string));
+         | _ -> ignore (Command.process context command_string));
          process_slave client_socket context)
     else Stdlib.print_endline "Error: No bytes received, existing slave sync"
   with
