@@ -54,7 +54,9 @@ let rec process_slave client_socket (context : Command.context_t) : unit =
              in
              Stdlib.print_endline "sneding result to master";
              ignore (send_to_master client_socket result)
-         | _ -> ignore (Command.process context command_string));
+         | _ ->
+             Stdlib.print_endline command_string;
+             ignore (Command.process context command_string));
          process_slave client_socket context)
     else Stdlib.print_endline "Error: No bytes received, existing slave sync"
   with
