@@ -1,9 +1,15 @@
 open Base
 
 type command_t = string * string list
-type command_queue_t = command_t Queue.t option
+type command_queue_t = command_t Queue.t
+type post_process_t = RegisterSlave | Mutation of Resp.t | Noop
 
-let empty_command_queue () : command_queue_t = None
+type context_t = {
+  role : Options.role_t;
+  command_queue : command_queue_t option;
+  post_process : post_process_t;
+}
+
 let process_ping () : Resp.t = Resp.SimpleString "PONG"
 
 let store_to_list (storage_value : Store.t option) : Lists.t option =
@@ -142,80 +148,109 @@ let info (args : string list) : Resp.t =
       | Slave _ -> Resp.BulkString "role:slave")
   | _ -> Resp.RespError "ERR Unknown role"
 
-let multi () : Resp.t * command_queue_t =
-  (Resp.SimpleString "OK", Some (Queue.create ()))
+let multi (context : context_t) : Resp.t * context_t =
+  let context = { context with command_queue = Some (Queue.create ()) } in
+  (Resp.SimpleString "OK", context)
 
 let replconf (_args : string list) : Resp.t = Resp.SimpleString "OK"
 
-let psync (_args : string list) : Resp.t =
+let psync (context : context_t) (_args : string list) : Resp.t * context_t =
   let decoded_rdb_result =
     Base64.decode
       "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
   in
-  match decoded_rdb_result with
-  | Ok empty_rdb ->
-      Resp.RespConcat
-        [
-          Resp.SimpleString
-            "FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0";
-          Resp.RespBinary empty_rdb;
-        ]
-  | Error _ -> Resp.RespError "ERR Decoding empty RDB file"
+  let result =
+    match decoded_rdb_result with
+    | Ok empty_rdb ->
+        Resp.RespConcat
+          [
+            Resp.SimpleString
+              "FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0";
+            Resp.RespBinary empty_rdb;
+          ]
+    | Error _ -> Resp.RespError "ERR Decoding empty RDB file"
+  in
+  (result, { context with post_process = RegisterSlave })
 
-let process_command (command : string * string list) : Resp.t =
+let readonly_command (context : context_t) (result : Resp.t) :
+    Resp.t * context_t =
+  (result, context)
+
+let readwrite_command (context : context_t) ((command, rest) : command_t)
+    (result : Resp.t) : Resp.t * context_t =
+  let list =
+    Resp.BulkString command :: List.map rest ~f:(fun a -> Resp.BulkString a)
+  in
+  (result, { context with post_process = Mutation (RespList list) })
+
+let process_command (context : context_t) (command : command_t) :
+    Resp.t * context_t =
   match command with
-  | "ping", [] -> process_ping ()
-  | "set", [ key; value ] -> set key value ~expiry:None
+  | "ping", [] -> readonly_command context @@ process_ping ()
+  | "set", [ key; value ] ->
+      readwrite_command context command @@ set key value ~expiry:None
   | "set", [ key; value; expiry_type; expiry_value ] ->
-      set ~expiry:(Some (expiry_type, expiry_value)) key value
-  | "incr", [ key ] -> incr key
-  | "get", [ key ] -> get key
-  | "rpush", key :: rest -> rpush key rest
-  | "lpush", key :: rest -> lpush key rest
-  | "lrange", [ key; from_idx; to_idx ] -> lrange key from_idx to_idx
-  | "llen", [ key ] -> llen key
-  | "lpop", [ key ] -> lpop key 1
-  | "lpop", [ key; count ] -> lpop key (Int.of_string count)
-  | "blpop", [ key; timeout ] -> blpop key timeout
-  | "type", [ key ] -> type_cmd key
-  | "echo", [ message ] -> echo message
-  | "xadd", key :: id :: rest -> xadd key id rest
-  | "xrange", [ key; from_id; to_id ] -> xrange key from_id to_id
+      readwrite_command context command
+      @@ set ~expiry:(Some (expiry_type, expiry_value)) key value
+  | "incr", [ key ] -> readwrite_command context command @@ incr key
+  | "get", [ key ] -> readonly_command context @@ get key
+  | "rpush", key :: rest -> readwrite_command context command @@ rpush key rest
+  | "lpush", key :: rest -> readwrite_command context command @@ lpush key rest
+  | "lrange", [ key; from_idx; to_idx ] ->
+      readonly_command context @@ lrange key from_idx to_idx
+  | "llen", [ key ] -> readonly_command context @@ llen key
+  | "lpop", [ key ] -> readonly_command context @@ lpop key 1
+  | "lpop", [ key; count ] ->
+      readonly_command context @@ lpop key (Int.of_string count)
+  | "blpop", [ key; timeout ] ->
+      readwrite_command context command @@ blpop key timeout
+  | "type", [ key ] -> readonly_command context @@ type_cmd key
+  | "echo", [ message ] -> readonly_command context @@ echo message
+  | "xadd", key :: id :: rest ->
+      readwrite_command context command @@ xadd key id rest
+  | "xrange", [ key; from_id; to_id ] ->
+      readonly_command context @@ xrange key from_id to_id
   | "xread", "block" :: timeout :: "streams" :: rest ->
-      xread rest (Some (Lifetime.create_expiry "px" timeout))
-  | "xread", _ :: rest -> xread rest None
-  | "exec", [] -> Resp.RespError "ERR EXEC without MULTI"
-  | "discard", [] -> Resp.RespError "ERR DISCARD without MULTI"
-  | "replconf", rest -> replconf rest
-  | "psync", rest -> psync rest
-  | "info", rest -> info rest
-  | _ -> Resp.Null
+      readonly_command context
+      @@ xread rest (Some (Lifetime.create_expiry "px" timeout))
+  | "xread", _ :: rest -> readonly_command context @@ xread rest None
+  | "exec", [] -> (Resp.RespError "ERR EXEC without MULTI", context)
+  | "discard", [] -> (Resp.RespError "ERR DISCARD without MULTI", context)
+  | "replconf", rest -> readonly_command context @@ replconf rest
+  | "psync", rest -> psync context rest
+  | "info", rest -> readonly_command context @@ info rest
+  | _ -> (Resp.Null, context)
 
-let exec (queue : command_queue_t) : Resp.t * command_queue_t =
-  match queue with
-  | None -> (Resp.RespError "ERR EXEC without MULTI", None)
+let exec (context : context_t) : Resp.t * context_t =
+  match context.command_queue with
+  | None ->
+      ( Resp.RespError "ERR EXEC without MULTI",
+        { context with command_queue = None } )
   | Some queue ->
       Queue.to_list queue
-      |> List.map ~f:(fun command -> process_command command)
-      |> fun list_of_resp -> (Resp.RespList list_of_resp, None)
+      |> List.map ~f:(fun command ->
+             let result, _ = process_command context command in
+             result)
+      |> fun list_of_resp ->
+      (Resp.RespList list_of_resp, { context with command_queue = None })
 
-let process_transaction_command (queue : command_t Queue.t)
-    (command : string * string list) : Resp.t * command_queue_t =
+let process_transaction_command (context : context_t)
+    (queue : command_t Queue.t) (command : command_t) : Resp.t * context_t =
   match command with
-  | "exec", [] -> exec (Some queue)
+  | "exec", [] -> exec context
   | "multi", _ ->
-      (Resp.RespError "ERR: nested transactions not supported", Some queue)
-  | "discard", _ -> (Resp.SimpleString "OK", None)
+      (Resp.RespError "ERR: nested transactions not supported", context)
+  | "discard", _ ->
+      (Resp.SimpleString "OK", { context with command_queue = None })
   | _ ->
       Queue.enqueue queue command;
-      (Resp.SimpleString "QUEUED", Some queue)
+      (Resp.SimpleString "QUEUED", context)
 
-let process (command_queue : command_queue_t) (str : string) :
-    Resp.t * command_queue_t =
+let process (context : context_t) (str : string) : Resp.t * context_t =
   let command = Resp.command str in
-  match command_queue with
-  | Some queue -> process_transaction_command queue command
+  match context.command_queue with
+  | Some queue -> process_transaction_command context queue command
   | None -> (
       match command with
-      | "multi", [] -> multi ()
-      | _ -> (process_command command, None))
+      | "multi", [] -> multi context
+      | _ -> process_command context command)
