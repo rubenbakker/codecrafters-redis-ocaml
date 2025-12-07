@@ -2,7 +2,7 @@ open Base
 
 type command_t = string * string list
 type command_queue_t = command_t Queue.t
-type post_process_t = RegisterSlave | Mutation of Resp.t | Noop
+type post_process_t = RegisterSlave of Resp.t option | Mutation of Resp.t | Noop
 
 type context_t = {
   role : Options.role_t;

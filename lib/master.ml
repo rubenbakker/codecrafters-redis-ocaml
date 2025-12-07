@@ -16,7 +16,7 @@ let protect fn =
 
 let state : Unix.file_descr list ref = ref []
 
-let register_slave (socket : Unix.file_descr) : unit =
+let register_slave (socket : Unix.file_descr) (rdb : Resp.t option) : unit =
   protect (fun () ->
       state := socket :: !state;
       let result =
@@ -25,10 +25,18 @@ let register_slave (socket : Unix.file_descr) : unit =
       in
       ignore
         (Unix.write socket (Bytes.of_string result) 0 (String.length result));
-
-      let buf = Bytes.create 2024 in
-      let _bytes_read = Unix.read socket buf 0 2024 in
-      Stdlib.print_endline (Bytes.to_string buf))
+      let buf = Bytes.create 512 in
+      let _bytes_read = Unix.read socket buf 0 512 in
+      Stdlib.print_endline (Bytes.to_string buf);
+      Thread.delay 0.1;
+      match rdb with
+      | Some rdb ->
+          let rdb_string = Resp.to_string rdb in
+          ignore
+            (Unix.write socket
+               (Bytes.of_string rdb_string)
+               0 (String.length result))
+      | None -> ())
 
 let notify_slaves (command : Resp.t) : unit =
   protect (fun () ->

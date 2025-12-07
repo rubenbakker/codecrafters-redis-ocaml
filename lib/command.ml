@@ -2,7 +2,11 @@ open Base
 
 type command_t = string * string list
 type command_queue_t = command_t Queue.t
-type post_process_t = RegisterSlave | Mutation of Resp.t | Noop
+
+type post_process_t =
+  | RegisterSlave of Resp.t option
+  | Mutation of Resp.t
+  | Noop
 
 exception InvalidData
 
@@ -132,13 +136,13 @@ let blpop (key : string) (timeout : string) : Resp.t =
 
 let type_cmd (key : string) : Resp.t =
   (match Store.get key with
-    | None -> "none"
-    | Some v -> (
-        match v with
-        | Store.StorageInt _ -> "integer"
-        | Store.StorageList _ -> "list"
-        | Store.StorageString _ -> "string"
-        | Store.StorageStream _ -> "stream"))
+  | None -> "none"
+  | Some v -> (
+      match v with
+      | Store.StorageInt _ -> "integer"
+      | Store.StorageList _ -> "list"
+      | Store.StorageString _ -> "string"
+      | Store.StorageStream _ -> "stream"))
   |> fun v -> Resp.SimpleString v
 
 let echo (message : string) : Resp.t = Resp.BulkString message
@@ -156,7 +160,7 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   let from_ids = List.sub rest ~pos:count ~len:(List.length rest - count) in
   List.zip_exn keys from_ids
   |> List.map ~f:(fun (key, from_id) ->
-      Store.query key store_to_stream (Streams.xread key from_id timeout))
+         Store.query key store_to_stream (Streams.xread key from_id timeout))
   |> fun l ->
   match l with
   | [ Resp.NullArray ] | [] -> Resp.NullArray
@@ -186,18 +190,15 @@ let psync (context : context_t) (_args : string list) : Resp.t * context_t =
     Base64.decode
       "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
   in
-  let result =
+  let result, rdb =
     match decoded_rdb_result with
     | Ok empty_rdb ->
-        Resp.RespConcat
-          [
-            Resp.SimpleString
-              "FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0";
-            Resp.RespBinary empty_rdb;
-          ]
-    | Error _ -> Resp.RespError "ERR Decoding empty RDB file"
+        ( Resp.SimpleString
+            "FULLRESYNC 8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb 0",
+          Some (Resp.RespBinary empty_rdb) )
+    | Error _ -> (Resp.RespError "ERR Decoding empty RDB file", None)
   in
-  (result, { context with post_process = RegisterSlave })
+  (result, { context with post_process = RegisterSlave rdb })
 
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
@@ -253,8 +254,8 @@ let exec (context : context_t) : Resp.t * context_t =
   | Some queue ->
       Queue.to_list queue
       |> List.map ~f:(fun command ->
-          let result, _ = process_command context command in
-          result)
+             let result, _ = process_command context command in
+             result)
       |> fun list_of_resp ->
       (Resp.RespList list_of_resp, { context with command_queue = None })
 
