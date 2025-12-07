@@ -92,6 +92,9 @@ let init_slave (host : string) (port : int) (slave_port : int) =
     |> send_to_master sock);
   ignore (create_command [ "REPLCONF"; "capa"; "psync2" ] |> send_to_master sock);
   ignore (create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master sock);
+  (* Read result of database *)
+  let buf = Bytes.create 4096 in
+  ignore (Unix.read sock buf 0 4096);
   ignore (Thread.create (fun () -> process_slave sock (empty_context ())) ())
 
 let () =
