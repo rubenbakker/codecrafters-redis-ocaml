@@ -41,7 +41,7 @@ let rec process_slave client_socket (context : Command.context_t) : unit =
     if bytes_read > 0 then
       ignore
         ((match Resp.command command_string with
-         | "replconf", [ "getack"; "*" ] ->
+         | "replconf", [ "GETACK"; "*" ] ->
              let result =
                ("REPLCONF", [ "ACK"; "0" ])
                |> Resp.from_command |> Resp.to_string
