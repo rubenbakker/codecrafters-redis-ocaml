@@ -24,7 +24,11 @@ let register_slave (socket : Unix.file_descr) : unit =
         |> Command.resp_from_command |> Resp.to_string
       in
       ignore
-        (Unix.write socket (Bytes.of_string result) 0 (String.length result)))
+        (Unix.write socket (Bytes.of_string result) 0 (String.length result));
+
+      let buf = Bytes.create 2024 in
+      let _bytes_read = Unix.read socket buf 0 2024 in
+      Stdlib.print_endline (Bytes.to_string buf))
 
 let notify_slaves (command : Resp.t) : unit =
   protect (fun () ->
