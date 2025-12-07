@@ -14,8 +14,6 @@ type t =
 val from_string : string -> int -> t
 val to_string : t -> string
 val to_sexp : t -> Sexp.t
-val command : string -> string * string list
-val from_command : string * string list -> t 
 val to_bulk_string : string -> string
 val to_simple_string : string -> string
 val to_integer_string : int -> string

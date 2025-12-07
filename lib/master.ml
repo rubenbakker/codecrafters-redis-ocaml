@@ -17,7 +17,14 @@ let protect fn =
 let state : Unix.file_descr list ref = ref []
 
 let register_slave (socket : Unix.file_descr) : unit =
-  protect (fun () -> state := socket :: !state)
+  protect (fun () ->
+      state := socket :: !state;
+      let result =
+        ("REPLCONF", [ "GETACK"; "*" ])
+        |> Command.resp_from_command |> Resp.to_string
+      in
+      ignore
+        (Unix.write socket (Bytes.of_string result) 0 (String.length result)))
 
 let notify_slaves (command : Resp.t) : unit =
   protect (fun () ->
@@ -27,4 +34,3 @@ let notify_slaves (command : Resp.t) : unit =
           ignore
             (Unix.write socket (Bytes.of_string result) 0 (String.length result)))
         !state)
-

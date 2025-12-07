@@ -4,11 +4,38 @@ type command_t = string * string list
 type command_queue_t = command_t Queue.t
 type post_process_t = RegisterSlave | Mutation of Resp.t | Noop
 
+exception InvalidData
+
 type context_t = {
   role : Options.role_t;
   command_queue : command_queue_t option;
   post_process : post_process_t;
 }
+
+let parse_command_line (str : string) : string * string list =
+  let parse_arg arg =
+    match arg with
+    | Resp.Integer integer -> Int.to_string integer
+    | Resp.BulkString str -> str
+    | Resp.SimpleString str -> str
+    | Resp.RespList _ -> ""
+    | Resp.NullArray -> ""
+    | Resp.Null -> ""
+    | Resp.RespBinary _str -> ""
+    | Resp.RespConcat _l -> ""
+    | Resp.RespError error -> error
+  in
+  let parsed_command = Resp.from_string str 0 in
+  match parsed_command with
+  | Resp.RespList (Resp.BulkString command :: rest) ->
+      (String.lowercase command, List.map ~f:parse_arg rest)
+  | _ -> raise InvalidData
+
+let resp_from_command ((command, rest) : command_t) =
+  let list =
+    Resp.BulkString command :: List.map rest ~f:(fun a -> Resp.BulkString a)
+  in
+  Resp.RespList list
 
 let process_ping () : Resp.t = Resp.SimpleString "PONG"
 
@@ -105,13 +132,13 @@ let blpop (key : string) (timeout : string) : Resp.t =
 
 let type_cmd (key : string) : Resp.t =
   (match Store.get key with
-  | None -> "none"
-  | Some v -> (
-      match v with
-      | Store.StorageInt _ -> "integer"
-      | Store.StorageList _ -> "list"
-      | Store.StorageString _ -> "string"
-      | Store.StorageStream _ -> "stream"))
+    | None -> "none"
+    | Some v -> (
+        match v with
+        | Store.StorageInt _ -> "integer"
+        | Store.StorageList _ -> "list"
+        | Store.StorageString _ -> "string"
+        | Store.StorageStream _ -> "stream"))
   |> fun v -> Resp.SimpleString v
 
 let echo (message : string) : Resp.t = Resp.BulkString message
@@ -129,7 +156,7 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   let from_ids = List.sub rest ~pos:count ~len:(List.length rest - count) in
   List.zip_exn keys from_ids
   |> List.map ~f:(fun (key, from_id) ->
-         Store.query key store_to_stream (Streams.xread key from_id timeout))
+      Store.query key store_to_stream (Streams.xread key from_id timeout))
   |> fun l ->
   match l with
   | [ Resp.NullArray ] | [] -> Resp.NullArray
@@ -178,7 +205,7 @@ let readonly_command (context : context_t) (result : Resp.t) :
 
 let readwrite_command (context : context_t) (command : command_t)
     (result : Resp.t) : Resp.t * context_t =
-  (result, { context with post_process = Mutation (Resp.from_command command) })
+  (result, { context with post_process = Mutation (resp_from_command command) })
 
 let process_command (context : context_t) (command : command_t) :
     Resp.t * context_t =
@@ -226,8 +253,8 @@ let exec (context : context_t) : Resp.t * context_t =
   | Some queue ->
       Queue.to_list queue
       |> List.map ~f:(fun command ->
-             let result, _ = process_command context command in
-             result)
+          let result, _ = process_command context command in
+          result)
       |> fun list_of_resp ->
       (Resp.RespList list_of_resp, { context with command_queue = None })
 
@@ -244,7 +271,7 @@ let process_transaction_command (context : context_t)
       (Resp.SimpleString "QUEUED", context)
 
 let process (context : context_t) (str : string) : Resp.t * context_t =
-  let command = Resp.command str in
+  let command = parse_command_line str in
   match context.command_queue with
   | Some queue -> process_transaction_command context queue command
   | None -> (

@@ -33,6 +33,13 @@ let rec process_client client_socket (context : Command.context_t) =
   | End_of_file -> Stdlib.print_endline "Error: end of file"
   | _ -> Stdlib.print_endline "Error: Unknown"
 
+let send_to_master sock (payload : Resp.t) : Resp.t =
+  let payload = payload |> Resp.to_string |> Bytes.of_string in
+  ignore (write sock payload 0 (Bytes.length payload));
+  let buf = Bytes.create 512 in
+  ignore (Unix.read sock buf 0 512);
+  Resp.from_string (Bytes.to_string buf) 0
+
 let rec process_slave client_socket (context : Command.context_t) : unit =
   try
     let buf = Bytes.create 2024 in
@@ -40,15 +47,13 @@ let rec process_slave client_socket (context : Command.context_t) : unit =
     let command_string = Bytes.to_string buf in
     if bytes_read > 0 then
       ignore
-        ((match Resp.command command_string with
+        ((match Command.parse_command_line command_string with
          | "replconf", [ "GETACK"; "*" ] ->
              let result =
-               ("REPLCONF", [ "ACK"; "0" ])
-               |> Resp.from_command |> Resp.to_string
+               ("REPLCONF", [ "ACK"; "0" ]) |> Command.resp_from_command
              in
-             ignore
-               (write client_socket (Bytes.of_string result) 0
-                  (String.length result))
+             Stdlib.print_endline "sneding result to master";
+             ignore (send_to_master client_socket result)
          | _ -> ignore (Command.process context command_string));
          process_slave client_socket context)
     else Stdlib.print_endline "Error: No bytes received, existing slave sync"
@@ -67,13 +72,6 @@ let rec accept_loop server_socket threads =
   let client_socket, _ = accept server_socket in
   let thread = Thread.create run_and_close_client client_socket in
   accept_loop server_socket (thread :: threads)
-
-let send_to_master sock (payload : Resp.t) : Resp.t =
-  let payload = payload |> Resp.to_string |> Bytes.of_string in
-  ignore (write sock payload 0 (Bytes.length payload));
-  let buf = Bytes.create 512 in
-  ignore (Unix.read sock buf 0 512);
-  Resp.from_string (Bytes.to_string buf) 0
 
 let create_command (args : string list) : Resp.t =
   args |> List.map ~f:(fun a -> Resp.BulkString a) |> fun l -> Resp.RespList l

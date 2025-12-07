@@ -13,9 +13,6 @@ type t =
 [@@deriving compare, equal, sexp]
 
 let null_string = "$-1\r\n"
-
-exception InvalidData
-
 let integer_regex = Str.regexp "^\\:\\([\\+\\-]?\\)\\(.*\\)\r\n"
 let simple_string_regex = Str.regexp "^\\+\\(.*\\)\r\n"
 let bulk_string_regex = Str.regexp "^\\$\\([0-9]+\\)\r\n\\(.*\\)\r\n"
@@ -78,30 +75,6 @@ let rec to_string (item : t) : string =
   | RespError error -> Printf.sprintf "-%s\r\n" error
 
 let to_sexp (input : t) : Sexp.t = sexp_of_t input
-
-let arg arg =
-  match arg with
-  | Integer integer -> Int.to_string integer
-  | BulkString str -> str
-  | SimpleString str -> str
-  | RespList _ -> ""
-  | NullArray -> ""
-  | Null -> ""
-  | RespBinary _str -> ""
-  | RespConcat _l -> ""
-  | RespError error -> error
-
-let command (str : string) : string * string list =
-  let parsed_command = from_string str 0 in
-  match parsed_command with
-  | RespList (BulkString command :: rest) ->
-      (String.lowercase command, List.map ~f:arg rest)
-  | _ -> raise InvalidData
-
-let from_command ((command, rest) : string * string list) =
-  let list = BulkString command :: List.map rest ~f:(fun a -> BulkString a) in
-  RespList list
-
 let to_simple_string (str : string) : string = SimpleString str |> to_string
 let to_bulk_string (str : string) : string = BulkString str |> to_string
 let to_integer_string (value : int) : string = Integer value |> to_string
