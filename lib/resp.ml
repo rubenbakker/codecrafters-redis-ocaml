@@ -98,6 +98,10 @@ let command (str : string) : string * string list =
       (String.lowercase command, List.map ~f:arg rest)
   | _ -> raise InvalidData
 
+let from_command ((command, rest) : string * string list) =
+  let list = BulkString command :: List.map rest ~f:(fun a -> BulkString a) in
+  RespList list
+
 let to_simple_string (str : string) : string = SimpleString str |> to_string
 let to_bulk_string (str : string) : string = BulkString str |> to_string
 let to_integer_string (value : int) : string = Integer value |> to_string

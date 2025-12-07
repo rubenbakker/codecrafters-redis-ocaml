@@ -176,12 +176,9 @@ let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
   (result, context)
 
-let readwrite_command (context : context_t) ((command, rest) : command_t)
+let readwrite_command (context : context_t) (command : command_t)
     (result : Resp.t) : Resp.t * context_t =
-  let list =
-    Resp.BulkString command :: List.map rest ~f:(fun a -> Resp.BulkString a)
-  in
-  (result, { context with post_process = Mutation (RespList list) })
+  (result, { context with post_process = Mutation (Resp.from_command command) })
 
 let process_command (context : context_t) (command : command_t) :
     Resp.t * context_t =

@@ -33,15 +33,25 @@ let rec process_client client_socket (context : Command.context_t) =
   | End_of_file -> Stdlib.print_endline "Error: end of file"
   | _ -> Stdlib.print_endline "Error: Unknown"
 
-let rec process_slave client_socket (context : Command.context_t) =
+let rec process_slave client_socket (context : Command.context_t) : unit =
   try
     let buf = Bytes.create 2024 in
     let bytes_read = Unix.read client_socket buf 0 2024 in
+    let command_string = Bytes.to_string buf in
     if bytes_read > 0 then
-      let _result, _context =
-        buf |> Bytes.to_string |> Command.process context
-      in
-      process_slave client_socket context
+      ignore
+        ((match Resp.command command_string with
+         | "replconf", [ "getack"; "*" ] ->
+             let result =
+               ("REPLCONF", [ "ACK"; "0" ])
+               |> Resp.from_command |> Resp.to_string
+             in
+             ignore
+               (write client_socket (Bytes.of_string result) 0
+                  (String.length result))
+         | _ -> ignore (Command.process context command_string));
+         process_slave client_socket context)
+    else Stdlib.print_endline "Error: No bytes received, existing slave sync"
   with
   | Unix_error (ECONNRESET, _, _) ->
       Stdlib.print_endline "Error: unix error - reset connection"
