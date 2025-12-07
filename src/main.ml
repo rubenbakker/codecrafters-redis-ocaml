@@ -36,8 +36,8 @@ let rec process_client client_socket (context : Command.context_t) =
 let send_to_master sock (payload : Resp.t) : Resp.t =
   let payload = payload |> Resp.to_string |> Bytes.of_string in
   ignore (write sock payload 0 (Bytes.length payload));
-  let buf = Bytes.create 512 in
-  ignore (Unix.read sock buf 0 512);
+  let buf = Bytes.create 4096 in
+  ignore (Unix.read sock buf 0 4096);
   Resp.from_string (Bytes.to_string buf) 0
 
 let rec process_slave client_socket (context : Command.context_t) : unit =
@@ -92,9 +92,6 @@ let init_slave (host : string) (port : int) (slave_port : int) =
     |> send_to_master sock);
   ignore (create_command [ "REPLCONF"; "capa"; "psync2" ] |> send_to_master sock);
   ignore (create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master sock);
-  (* Read result of database *)
-  let buf = Bytes.create 4096 in
-  ignore (Unix.read sock buf 0 4096);
   ignore (Thread.create (fun () -> process_slave sock (empty_context ())) ())
 
 let () =
