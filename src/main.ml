@@ -19,14 +19,16 @@ let rec process_client client_socket (context : Command.context_t) =
   try
     let buf = Bytes.create 2024 in
     let bytes_read = Unix.read client_socket buf 0 2024 in
-    if bytes_read > 0 then
+    if bytes_read > 0 then (
       let result, context = buf |> Bytes.to_string |> Command.process context in
       let result = Resp.to_string result in
+      Stdlib.print_endline "writing back";
+      Stdlib.print_endline result;
       let _ =
         write client_socket (Bytes.of_string result) 0 (String.length result)
       in
       let context = post_process_command context client_socket in
-      process_client client_socket context
+      process_client client_socket context)
   with
   | Unix_error (ECONNRESET, _, _) ->
       Stdlib.print_endline "Error: unix error - reset connection"
@@ -92,7 +94,9 @@ let init_slave (host : string) (port : int) (slave_port : int) =
     (create_command [ "REPLCONF"; "listening-port"; Int.to_string slave_port ]
     |> send_to_master sock);
   ignore (create_command [ "REPLCONF"; "capa"; "psync2" ] |> send_to_master sock);
-  ignore (create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master sock);
+  let x = create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master sock in
+  Stdlib.print_endline "received anser from psync";
+  Stdlib.print_endline (Resp.to_string x);
   Stdlib.print_endline "before rdb file";
   (* rdb file *)
   let buf = Bytes.create 2048 in

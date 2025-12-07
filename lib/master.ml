@@ -35,6 +35,7 @@ let register_slave (socket : Unix.file_descr) (rdb : Resp.t option) : unit =
            0 (String.length rdb_string))
   | None -> ());
   Stdlib.print_endline "after rdb";
+  Thread.delay 0.1;
   let result =
     ("REPLCONF", [ "GETACK"; "*" ])
     |> Command.resp_from_command |> send_to_slave socket
