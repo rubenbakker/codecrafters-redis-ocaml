@@ -46,6 +46,8 @@ let rec process_slave channels (context : Command.context_t)
   try
     let inch, _ = channels in
     let command, command_length = Resp.read_from_channel inch in
+    Stdlib.Printf.printf "%s -> %d = %d" (Resp.to_string command) command_length
+      acc_command_length;
     ignore
       ((match Command.parse_command_line command with
        | "replconf", [ "GETACK"; "*" ] ->
