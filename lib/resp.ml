@@ -79,12 +79,23 @@ let to_simple_string (str : string) : string = SimpleString str |> to_string
 let to_bulk_string (str : string) : string = BulkString str |> to_string
 let to_integer_string (value : int) : string = Integer value |> to_string
 
-let read_from_channel (channel : Stdlib.Scanf.Scanning.in_channel) : t =
-  match Stdlib.Scanf.bscanf channel "%c" (fun c -> c) with
-  | ':' -> Stdlib.Scanf.bscanf channel "%d" (fun value -> Integer value)
+let rec read_from_channel (channel : Stdlib.Scanf.Scanning.in_channel) : t =
+  let open Stdlib.Scanf in
+  match bscanf channel "%c" (fun c -> c) with
+  | ':' -> bscanf channel "%d" (fun value -> Integer value)
+  | '+' -> bscanf channel "%[^\r\n]\r\n" (fun value -> SimpleString value)
+  | '-' -> bscanf channel "%[^\r\n]\r\n" (fun value -> RespError value)
   | '$' ->
-      Stdlib.Scanf.bscanf channel "%d\r\n%s\r\n" (fun _ value ->
-          BulkString value)
+      let _count = bscanf channel "%d\r\n" (fun count -> count) in
+      let str = bscanf channel "%[^\r\n]" (fun value -> value) in
+      if Scanning.end_of_input channel then RespBinary str
+      else (
+        ignore @@ bscanf channel "%[\r\n]" (fun value -> value);
+        BulkString str)
+  | '*' ->
+      let count = bscanf channel "%d\r\n" (fun count -> count) in
+      List.range 0 count |> List.map ~f:(fun _ -> read_from_channel channel)
+      |> fun l -> RespList l
   | _ -> RespError "Error: not implemented"
 
 let%test_unit "from_string integer" =
