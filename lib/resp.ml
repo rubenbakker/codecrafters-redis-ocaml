@@ -125,10 +125,6 @@ let rec read_from_channel (channel : Stdlib.in_channel) : t * int =
     | _ -> RespError "Error: not implemented"
   in
   let after = Stdlib.pos_in channel in
-  Stdlib.Printf.printf "read %s %d\n"
-    (Sexp.to_string (to_sexp result))
-    (after - before);
-  Stdlib.flush Stdlib.stdout;
   (result, after - before)
 
 let%test_unit "from_string integer" =

@@ -20,9 +20,6 @@ let rec process_client client_socket (context : Command.context_t) =
     let in_channel = in_channel_of_descr client_socket in
     let out_channel = out_channel_of_descr client_socket in
     let resp_result, _ = Resp.read_from_channel in_channel in
-    Stdlib.Printf.printf "process_client: %s\n"
-      (Sexp.to_string (Resp.to_sexp resp_result));
-    Stdlib.flush Stdlib.stdout;
     let result, context =
       resp_result |> Command.parse_command_line |> Command.process context
     in
@@ -56,10 +53,6 @@ let rec process_slave channels (context : Command.context_t)
   try
     let inch, _ = channels in
     let command, command_length = Resp.read_from_channel inch in
-    Stdlib.Printf.printf "%s -> l=%d -> al=%d\n"
-      (Sexp.to_string (Resp.to_sexp command))
-      command_length acc_command_length;
-    Stdlib.flush Stdlib.stdout;
     ignore
       ((match Command.parse_command_line command with
        | "replconf", [ "GETACK"; "*" ] ->
@@ -107,13 +100,9 @@ let init_slave (host : string) (port : int) (slave_port : int) =
     |> send_to_master channels);
   ignore
     (create_command [ "REPLCONF"; "capa"; "psync2" ] |> send_to_master channels);
-  let x, _length =
-    create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master channels
-  in
-  Stdlib.print_endline (Sexp.to_string (Resp.to_sexp x));
+  ignore (create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master channels);
   (* rdb file *)
-  let x, _ = Resp.read_binary_from_channel in_channel in
-  Stdlib.print_endline (Sexp.to_string (Resp.to_sexp x));
+  ignore @@ Resp.read_binary_from_channel in_channel;
   ignore
     (Thread.create (fun () -> process_slave channels (empty_context ()) 0) ())
 
