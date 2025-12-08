@@ -46,8 +46,9 @@ let rec process_slave channels (context : Command.context_t)
   try
     let inch, _ = channels in
     let command, command_length = Resp.read_from_channel inch in
-    Stdlib.Printf.printf "%s -> %d = %d" (Resp.to_string command) command_length
-      acc_command_length;
+    Stdlib.Printf.printf "%s -> l=%d -> al=%d"
+      (Sexp.to_string (Resp.to_sexp command))
+      command_length acc_command_length;
     Stdlib.flush Stdlib.stdout;
     ignore
       ((match Command.parse_command_line command with
