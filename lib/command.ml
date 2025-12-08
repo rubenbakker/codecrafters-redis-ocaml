@@ -185,6 +185,9 @@ let multi (context : context_t) : Resp.t * context_t =
 
 let replconf (_args : string list) : Resp.t = Resp.SimpleString "OK"
 
+let wait (_num_replicas : string) (_timeout_ms : string) : Resp.t =
+  Resp.Integer 0
+
 let psync (context : context_t) (_args : string list) : Resp.t * context_t =
   let decoded_rdb_result =
     Base64.decode
@@ -248,6 +251,8 @@ let process_command (context : context_t) (command : command_t) :
   | "replconf", rest -> readonly_command context @@ replconf rest
   | "psync", rest -> psync context rest
   | "info", rest -> readonly_command context @@ info rest
+  | "wait", [ num_replicas; timeout_ms ] ->
+      readonly_command context @@ wait num_replicas timeout_ms
   | _ -> (Resp.Null, context)
 
 let exec (context : context_t) : Resp.t * context_t =
