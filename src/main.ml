@@ -20,6 +20,9 @@ let rec process_client client_socket (context : Command.context_t) =
     let in_channel = in_channel_of_descr client_socket in
     let out_channel = out_channel_of_descr client_socket in
     let resp_result, _ = Resp.read_from_channel in_channel in
+    Stdlib.Printf.printf "process_client: %s\n"
+      (Sexp.to_string (Resp.to_sexp resp_result));
+    Stdlib.flush Stdlib.stdout;
     let result, context =
       resp_result |> Command.parse_command_line |> Command.process context
     in
