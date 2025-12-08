@@ -24,8 +24,6 @@ let rec process_client client_socket (context : Command.context_t) =
       |> Command.parse_command_line |> Command.process context
     in
     let result = Resp.to_string result in
-    Stdlib.print_endline "writing back";
-    Stdlib.print_endline result;
     Stdlib.Printf.fprintf out_channel "%s" result;
     Stdlib.flush out_channel;
     let context = post_process_command context client_socket in
@@ -45,10 +43,8 @@ let send_to_master ((inch, outch) : Stdlib.in_channel * Stdlib.out_channel)
 
 let rec process_slave channels (context : Command.context_t) : unit =
   try
-    Stdlib.print_endline "inside process_slave";
     let inch, _ = channels in
     let command = Resp.read_from_channel inch in
-    Stdlib.print_endline "Slave received";
     Stdlib.print_endline (Resp.to_string command);
     ignore
       ((match Command.parse_command_line command with
@@ -56,7 +52,6 @@ let rec process_slave channels (context : Command.context_t) : unit =
            let result =
              ("REPLCONF", [ "ACK"; "0" ]) |> Command.resp_from_command
            in
-           Stdlib.print_endline "sneding result to master";
            ignore (send_to_master channels result)
        | _ ->
            ignore (Command.process context (Command.parse_command_line command)));
@@ -98,13 +93,9 @@ let init_slave (host : string) (port : int) (slave_port : int) =
   ignore
     (create_command [ "REPLCONF"; "capa"; "psync2" ] |> send_to_master channels);
   let x = create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master channels in
-  Stdlib.print_endline "received anser from psync";
   Stdlib.print_endline (Resp.to_string x);
-  Stdlib.print_endline "before rdb file";
   (* rdb file *)
-  let x = Resp.read_binary_from_channel in_channel in
-  Stdlib.print_endline (Resp.to_string x);
-  Stdlib.print_endline "after rdb file";
+  let _x = Resp.read_binary_from_channel in_channel in
   ignore
     (Thread.create (fun () -> process_slave channels (empty_context ())) ())
 

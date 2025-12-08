@@ -25,27 +25,20 @@ let send_to_slave sock (payload : Resp.t) : Resp.t =
 
 let register_slave (socket : Unix.file_descr) (rdb : Resp.t option) : unit =
   protect (fun () -> state := socket :: !state);
-  Stdlib.print_endline "before rdb";
-  (match rdb with
+  match rdb with
   | Some rdb ->
       let rdb_string = Resp.to_string rdb in
       ignore
         (Unix.write socket
            (Bytes.of_string rdb_string)
            0 (String.length rdb_string))
-  | None -> ());
-  Stdlib.print_endline "after rdb";
-  Stdlib.print_endline "end of register_slave"
+  | None -> ()
 
 let notify_slaves (command : Resp.t) : unit =
-  Stdlib.print_endline "start of notify_slaves";
   protect (fun () ->
       List.iter
         (fun socket ->
           let result = Resp.to_string command in
-          Stdlib.print_endline "writing";
-          Stdlib.print_endline result;
           ignore
             (Unix.write socket (Bytes.of_string result) 0 (String.length result)))
-        !state);
-  Stdlib.print_endline "end of of notify_slaves"
+        !state)
