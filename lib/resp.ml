@@ -12,6 +12,8 @@ type t =
   | RespError of string
 [@@deriving compare, equal, sexp]
 
+exception InvalidData
+
 let null_string = "$-1\r\n"
 let integer_regex = Str.regexp "^\\:\\([\\+\\-]?\\)\\(.*\\)\r\n"
 let simple_string_regex = Str.regexp "^\\+\\(.*\\)\r\n"
@@ -79,21 +81,38 @@ let to_simple_string (str : string) : string = SimpleString str |> to_string
 let to_bulk_string (str : string) : string = BulkString str |> to_string
 let to_integer_string (value : int) : string = Integer value |> to_string
 
-let rec read_from_channel (channel : Stdlib.Scanf.Scanning.in_channel) : t =
-  let open Stdlib.Scanf in
-  match bscanf channel "%c" (fun c -> c) with
-  | ':' -> bscanf channel "%d" (fun value -> Integer value)
-  | '+' -> bscanf channel "%[^\r\n]\r\n" (fun value -> SimpleString value)
-  | '-' -> bscanf channel "%[^\r\n]\r\n" (fun value -> RespError value)
+let remove_trailing_cr value =
+  String.sub ~pos:0 ~len:(String.length value - 1) value
+
+let read_line_int (channel : Stdlib.in_channel) : int =
+  let str = Stdlib.input_line channel in
+  Int.of_string (remove_trailing_cr str)
+
+let read_binary_from_channel (channel : Stdlib.in_channel) : t =
+  match Stdlib.input_char channel with
   | '$' ->
-      let _count = bscanf channel "%d\r\n" (fun count -> count) in
-      let str = bscanf channel "%[^\r\n]" (fun value -> value) in
-      if Scanning.end_of_input channel then RespBinary str
-      else (
-        ignore @@ bscanf channel "%[\r\n]" (fun value -> value);
-        BulkString str)
+      let count = read_line_int channel in
+      let str = Stdlib.really_input_string channel count in
+      RespBinary str
+  | _ -> raise InvalidData
+
+let rec read_from_channel (channel : Stdlib.in_channel) : t =
+  match Stdlib.input_char channel with
+  | ':' -> read_line_int channel |> fun value -> Integer value
+  | '+' ->
+      Stdlib.input_line channel |> remove_trailing_cr |> fun value ->
+      SimpleString value
+  | '-' ->
+      Stdlib.input_line channel |> remove_trailing_cr |> fun value ->
+      RespError value
+  | '$' ->
+      let count = read_line_int channel in
+      let str = Stdlib.really_input_string channel count in
+      ignore @@ Stdlib.really_input_string channel 2;
+      (* remove \r\n from tail *)
+      BulkString str
   | '*' ->
-      let count = bscanf channel "%d\r\n" (fun count -> count) in
+      let count = read_line_int channel in
       List.range 0 count |> List.map ~f:(fun _ -> read_from_channel channel)
       |> fun l -> RespList l
   | _ -> RespError "Error: not implemented"

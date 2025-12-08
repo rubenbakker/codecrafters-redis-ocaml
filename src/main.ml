@@ -17,51 +17,50 @@ let post_process_command (context : Command.context_t)
 
 let rec process_client client_socket (context : Command.context_t) =
   try
-    let buf = Bytes.create 2024 in
-    let bytes_read = Unix.read client_socket buf 0 2024 in
-    if bytes_read > 0 then (
-      let result, context = buf |> Bytes.to_string |> Command.process context in
-      let result = Resp.to_string result in
-      Stdlib.print_endline "writing back";
-      Stdlib.print_endline result;
-      let _ =
-        write client_socket (Bytes.of_string result) 0 (String.length result)
-      in
-      let context = post_process_command context client_socket in
-      process_client client_socket context)
+    let in_channel = in_channel_of_descr client_socket in
+    let out_channel = out_channel_of_descr client_socket in
+    let result, context =
+      Resp.read_from_channel in_channel
+      |> Command.parse_command_line |> Command.process context
+    in
+    let result = Resp.to_string result in
+    Stdlib.print_endline "writing back";
+    Stdlib.print_endline result;
+    Stdlib.Printf.fprintf out_channel "%s" result;
+    Stdlib.flush out_channel;
+    let context = post_process_command context client_socket in
+    process_client client_socket context
   with
   | Unix_error (ECONNRESET, _, _) ->
       Stdlib.print_endline "Error: unix error - reset connection"
   | End_of_file -> Stdlib.print_endline "Error: end of file"
   | _ -> Stdlib.print_endline "Error: Unknown"
 
-let send_to_master sock (payload : Resp.t) : Resp.t =
-  let payload = payload |> Resp.to_string |> Bytes.of_string in
-  ignore (write sock payload 0 (Bytes.length payload));
-  let buf = Bytes.create 512 in
-  ignore (Unix.read sock buf 0 512);
-  Resp.from_string (Bytes.to_string buf) 0
+let send_to_master ((inch, outch) : Stdlib.in_channel * Stdlib.out_channel)
+    (payload : Resp.t) : Resp.t =
+  let payload = payload |> Resp.to_string in
+  Stdlib.Printf.fprintf outch "%s" payload;
+  Stdlib.flush outch;
+  Resp.read_from_channel inch
 
-let rec process_slave client_socket (context : Command.context_t) : unit =
+let rec process_slave channels (context : Command.context_t) : unit =
   try
     Stdlib.print_endline "inside process_slave";
-    let buf = Bytes.create 2024 in
-    let bytes_read = Unix.read client_socket buf 0 2024 in
-    let command_string = Bytes.to_string buf in
+    let inch, _ = channels in
+    let command = Resp.read_from_channel inch in
     Stdlib.print_endline "Slave received";
-    Stdlib.print_endline command_string;
-    if bytes_read > 0 then
-      ignore
-        ((match Command.parse_command_line command_string with
-         | "replconf", [ "GETACK"; "*" ] ->
-             let result =
-               ("REPLCONF", [ "ACK"; "0" ]) |> Command.resp_from_command
-             in
-             Stdlib.print_endline "sneding result to master";
-             ignore (send_to_master client_socket result)
-         | _ -> ignore (Command.process context command_string));
-         process_slave client_socket context)
-    else Stdlib.print_endline "Error: No bytes received, existing slave sync"
+    Stdlib.print_endline (Resp.to_string command);
+    ignore
+      ((match Command.parse_command_line command with
+       | "replconf", [ "GETACK"; "*" ] ->
+           let result =
+             ("REPLCONF", [ "ACK"; "0" ]) |> Command.resp_from_command
+           in
+           Stdlib.print_endline "sneding result to master";
+           ignore (send_to_master channels result)
+       | _ ->
+           ignore (Command.process context (Command.parse_command_line command)));
+       process_slave channels context)
   with
   | Unix_error (ECONNRESET, _, _) ->
       Stdlib.print_endline "Error: unix error - reset connection"
@@ -89,21 +88,25 @@ let init_slave (host : string) (port : int) (slave_port : int) =
   in
   let sock = socket PF_INET SOCK_STREAM 0 in
   connect sock (ADDR_INET (hostaddr, port));
-  ignore (create_command [ "PING" ] |> send_to_master sock);
+  let in_channel = in_channel_of_descr sock in
+  let out_channel = out_channel_of_descr sock in
+  let channels = (in_channel, out_channel) in
+  ignore (create_command [ "PING" ] |> send_to_master channels);
   ignore
     (create_command [ "REPLCONF"; "listening-port"; Int.to_string slave_port ]
-    |> send_to_master sock);
-  ignore (create_command [ "REPLCONF"; "capa"; "psync2" ] |> send_to_master sock);
-  let x = create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master sock in
+    |> send_to_master channels);
+  ignore
+    (create_command [ "REPLCONF"; "capa"; "psync2" ] |> send_to_master channels);
+  let x = create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master channels in
   Stdlib.print_endline "received anser from psync";
   Stdlib.print_endline (Resp.to_string x);
   Stdlib.print_endline "before rdb file";
   (* rdb file *)
-  let buf = Bytes.create 2048 in
-  ignore (Unix.read sock buf 0 2048);
-  Stdlib.print_endline (Bytes.to_string buf);
+  let x = Resp.read_binary_from_channel in_channel in
+  Stdlib.print_endline (Resp.to_string x);
   Stdlib.print_endline "after rdb file";
-  ignore (Thread.create (fun () -> process_slave sock (empty_context ())) ())
+  ignore
+    (Thread.create (fun () -> process_slave channels (empty_context ())) ())
 
 let () =
   (* Create a TCP server socket *)
