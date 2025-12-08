@@ -35,3 +35,5 @@ let notify_slaves (command : Resp.t) : unit =
           ignore
             (Unix.write socket (Bytes.of_string result) 0 (String.length result)))
         !state)
+
+let num_slaves () : int = protect (fun () -> List.length !state)

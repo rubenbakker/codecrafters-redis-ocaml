@@ -186,7 +186,7 @@ let multi (context : context_t) : Resp.t * context_t =
 let replconf (_args : string list) : Resp.t = Resp.SimpleString "OK"
 
 let wait (_num_replicas : string) (_timeout_ms : string) : Resp.t =
-  Resp.Integer 0
+  Resp.Integer (Master.num_slaves ())
 
 let psync (context : context_t) (_args : string list) : Resp.t * context_t =
   let decoded_rdb_result =
