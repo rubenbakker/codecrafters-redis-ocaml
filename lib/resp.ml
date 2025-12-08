@@ -79,6 +79,14 @@ let to_simple_string (str : string) : string = SimpleString str |> to_string
 let to_bulk_string (str : string) : string = BulkString str |> to_string
 let to_integer_string (value : int) : string = Integer value |> to_string
 
+let read_from_channel (channel : Stdlib.Scanf.Scanning.in_channel) : t =
+  match Stdlib.Scanf.bscanf channel "%c" (fun c -> c) with
+  | ':' -> Stdlib.Scanf.bscanf channel "%d" (fun value -> Integer value)
+  | '$' ->
+      Stdlib.Scanf.bscanf channel "%d\r\n%s\r\n" (fun _ value ->
+          BulkString value)
+  | _ -> RespError "Error: not implemented"
+
 let%test_unit "from_string integer" =
   [%test_eq: t] (from_string ":+55\r\n" 0) (Integer 55)
 

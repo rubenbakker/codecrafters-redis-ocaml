@@ -18,3 +18,4 @@ val to_bulk_string : string -> string
 val to_simple_string : string -> string
 val to_integer_string : int -> string
 val null_string : string
+val read_from_channel : Stdlib.Scanf.Scanning.in_channel -> t
