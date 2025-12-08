@@ -11,7 +11,7 @@ let post_process_command (context : Command.context_t)
   ignore
     (match context.post_process with
     | RegisterSlave rdb -> Master.register_slave client_socket rdb
-    | Mutation command -> Master.notify_slaves command
+    | Mutation command | Propagate command -> Master.notify_slaves command
     | Noop -> ());
   { context with post_process = Noop }
 

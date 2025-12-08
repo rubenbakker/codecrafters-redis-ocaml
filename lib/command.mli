@@ -6,6 +6,7 @@ type command_queue_t = command_t Queue.t
 type post_process_t =
   | RegisterSlave of Resp.t option
   | Mutation of Resp.t
+  | Propagate of Resp.t
   | Noop
 
 type context_t = {
