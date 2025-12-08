@@ -6,6 +6,7 @@ type command_queue_t = command_t Queue.t
 type post_process_t =
   | RegisterSlave of Resp.t option
   | Mutation of Resp.t
+  | Propagate of Resp.t
   | Noop
 
 exception InvalidData
@@ -203,6 +204,10 @@ let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
   (result, context)
 
+let readonly_command_with_propagation (context : context_t)
+    (command : command_t) (result : Resp.t) : Resp.t * context_t =
+  (result, { context with post_process = Propagate (resp_from_command command) })
+
 let readwrite_command (context : context_t) (command : command_t)
     (result : Resp.t) : Resp.t * context_t =
   (result, { context with post_process = Mutation (resp_from_command command) })
@@ -210,7 +215,8 @@ let readwrite_command (context : context_t) (command : command_t)
 let process_command (context : context_t) (command : command_t) :
     Resp.t * context_t =
   match command with
-  | "ping", [] -> readonly_command context @@ process_ping ()
+  | "ping", [] ->
+      readonly_command_with_propagation context command @@ process_ping ()
   | "set", [ key; value ] ->
       readwrite_command context command @@ set key value ~expiry:None
   | "set", [ key; value; expiry_type; expiry_value ] ->
