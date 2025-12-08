@@ -19,9 +19,9 @@ let rec process_client client_socket (context : Command.context_t) =
   try
     let in_channel = in_channel_of_descr client_socket in
     let out_channel = out_channel_of_descr client_socket in
+    let resp_result, _ = Resp.read_from_channel in_channel in
     let result, context =
-      Resp.read_from_channel in_channel
-      |> Command.parse_command_line |> Command.process context
+      resp_result |> Command.parse_command_line |> Command.process context
     in
     let result = Resp.to_string result in
     Stdlib.Printf.fprintf out_channel "%s" result;
@@ -35,27 +35,28 @@ let rec process_client client_socket (context : Command.context_t) =
   | _ -> Stdlib.print_endline "Error: Unknown"
 
 let send_to_master ((inch, outch) : Stdlib.in_channel * Stdlib.out_channel)
-    (payload : Resp.t) : Resp.t =
+    (payload : Resp.t) : Resp.t * int =
   let payload = payload |> Resp.to_string in
   Stdlib.Printf.fprintf outch "%s" payload;
   Stdlib.flush outch;
   Resp.read_from_channel inch
 
-let rec process_slave channels (context : Command.context_t) : unit =
+let rec process_slave channels (context : Command.context_t)
+    (acc_command_length : int) : unit =
   try
     let inch, _ = channels in
-    let command = Resp.read_from_channel inch in
-    Stdlib.print_endline (Resp.to_string command);
+    let command, command_length = Resp.read_from_channel inch in
     ignore
       ((match Command.parse_command_line command with
        | "replconf", [ "GETACK"; "*" ] ->
            let result =
-             ("REPLCONF", [ "ACK"; "0" ]) |> Command.resp_from_command
+             ("REPLCONF", [ "ACK"; Int.to_string acc_command_length ])
+             |> Command.resp_from_command
            in
            ignore (send_to_master channels result)
        | _ ->
            ignore (Command.process context (Command.parse_command_line command)));
-       process_slave channels context)
+       process_slave channels context (acc_command_length + command_length))
   with
   | Unix_error (ECONNRESET, _, _) ->
       Stdlib.print_endline "Error: unix error - reset connection"
@@ -92,12 +93,14 @@ let init_slave (host : string) (port : int) (slave_port : int) =
     |> send_to_master channels);
   ignore
     (create_command [ "REPLCONF"; "capa"; "psync2" ] |> send_to_master channels);
-  let x = create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master channels in
+  let x, _length =
+    create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master channels
+  in
   Stdlib.print_endline (Resp.to_string x);
   (* rdb file *)
   let _x = Resp.read_binary_from_channel in_channel in
   ignore
-    (Thread.create (fun () -> process_slave channels (empty_context ())) ())
+    (Thread.create (fun () -> process_slave channels (empty_context ()) 0) ())
 
 let () =
   (* Create a TCP server socket *)

@@ -88,34 +88,44 @@ let read_line_int (channel : Stdlib.in_channel) : int =
   let str = Stdlib.input_line channel in
   Int.of_string (remove_trailing_cr str)
 
-let read_binary_from_channel (channel : Stdlib.in_channel) : t =
+let read_binary_from_channel (channel : Stdlib.in_channel) : t * int =
+  let before = Stdlib.pos_in channel in
   match Stdlib.input_char channel with
   | '$' ->
       let count = read_line_int channel in
       let str = Stdlib.really_input_string channel count in
-      RespBinary str
+      let after = Stdlib.pos_in channel in
+      (RespBinary str, after - before)
   | _ -> raise InvalidData
 
-let rec read_from_channel (channel : Stdlib.in_channel) : t =
-  match Stdlib.input_char channel with
-  | ':' -> read_line_int channel |> fun value -> Integer value
-  | '+' ->
-      Stdlib.input_line channel |> remove_trailing_cr |> fun value ->
-      SimpleString value
-  | '-' ->
-      Stdlib.input_line channel |> remove_trailing_cr |> fun value ->
-      RespError value
-  | '$' ->
-      let count = read_line_int channel in
-      let str = Stdlib.really_input_string channel count in
-      ignore @@ Stdlib.really_input_string channel 2;
-      (* remove \r\n from tail *)
-      BulkString str
-  | '*' ->
-      let count = read_line_int channel in
-      List.range 0 count |> List.map ~f:(fun _ -> read_from_channel channel)
-      |> fun l -> RespList l
-  | _ -> RespError "Error: not implemented"
+let rec read_from_channel (channel : Stdlib.in_channel) : t * int =
+  let before = Stdlib.pos_in channel in
+  let result =
+    match Stdlib.input_char channel with
+    | ':' -> read_line_int channel |> fun value -> Integer value
+    | '+' ->
+        Stdlib.input_line channel |> remove_trailing_cr |> fun value ->
+        SimpleString value
+    | '-' ->
+        Stdlib.input_line channel |> remove_trailing_cr |> fun value ->
+        RespError value
+    | '$' ->
+        let count = read_line_int channel in
+        let str = Stdlib.really_input_string channel count in
+        ignore @@ Stdlib.really_input_string channel 2;
+        (* remove \r\n from tail *)
+        BulkString str
+    | '*' ->
+        let count = read_line_int channel in
+        List.range 0 count
+        |> List.map ~f:(fun _ ->
+            let result, _ = read_from_channel channel in
+            result)
+        |> fun l -> RespList l
+    | _ -> RespError "Error: not implemented"
+  in
+  let after = Stdlib.pos_in channel in
+  (result, after - before)
 
 let%test_unit "from_string integer" =
   [%test_eq: t] (from_string ":+55\r\n" 0) (Integer 55)
