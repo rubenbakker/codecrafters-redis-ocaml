@@ -103,9 +103,10 @@ let init_slave (host : string) (port : int) (slave_port : int) =
   let x, _length =
     create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master channels
   in
-  Stdlib.print_endline (Resp.to_string x);
+  Stdlib.print_endline (Sexp.to_string (Resp.to_sexp x));
   (* rdb file *)
-  let _x = Resp.read_binary_from_channel in_channel in
+  let x, _ = Resp.read_binary_from_channel in_channel in
+  Stdlib.print_endline (Sexp.to_string (Resp.to_sexp x));
   ignore
     (Thread.create (fun () -> process_slave channels (empty_context ()) 0) ())
 
