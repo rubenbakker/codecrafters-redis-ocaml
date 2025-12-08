@@ -119,12 +119,16 @@ let rec read_from_channel (channel : Stdlib.in_channel) : t * int =
         let count = read_line_int channel in
         List.range 0 count
         |> List.map ~f:(fun _ ->
-            let result, _ = read_from_channel channel in
-            result)
+               let result, _ = read_from_channel channel in
+               result)
         |> fun l -> RespList l
     | _ -> RespError "Error: not implemented"
   in
   let after = Stdlib.pos_in channel in
+  Stdlib.Printf.printf "read %s %d\n"
+    (Sexp.to_string (to_sexp result))
+    (after - before);
+  Stdlib.flush Stdlib.stdout;
   (result, after - before)
 
 let%test_unit "from_string integer" =
