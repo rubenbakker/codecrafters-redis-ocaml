@@ -91,28 +91,34 @@ let process_replconf_ack (slave : slave_t) =
       ] ->
           ignore
           @@ protect (fun () -> slave.bytes_ack <- Int.of_string bytes_ack);
-          List.iter
-            ~f:(fun wl ->
-              wl.num_ack_slaves <- wl.num_ack_slaves + 1;
-              Stdlib.print_endline ">>> num_ack_slaves";
-              Stdlib.print_int wl.num_ack_slaves;
-              Stdlib.print_int wl.num_required_slaves;
-              Stdlib.print_endline "<<<";
-              if wl.num_ack_slaves >= wl.num_required_slaves then (
-                wl.result <- Some wl.num_ack_slaves;
-                ignore
-                @@ protect (fun () ->
-                    wait_listeners :=
-                      List.filter
-                        ~f:(fun w -> Option.is_none w.result)
-                        !wait_listeners);
-                Stdlib.Condition.signal wl.condition)
-              else ())
-            !wait_listeners;
-          ignore
-          @@ protect (fun () ->
-              slave.bytes_sent <-
-                slave.bytes_sent + String.length command_payload)
+          if slave.bytes_ack = slave.bytes_sent then (
+            Stdlib.print_endline "same bytes!";
+            List.iter
+              ~f:(fun wl ->
+                wl.num_ack_slaves <- wl.num_ack_slaves + 1;
+                Stdlib.print_endline ">>> num_ack_slaves";
+                Stdlib.print_int wl.num_ack_slaves;
+                Stdlib.print_int wl.num_required_slaves;
+                Stdlib.print_endline "<<<";
+                if wl.num_ack_slaves >= wl.num_required_slaves then (
+                  wl.result <- Some wl.num_ack_slaves;
+                  ignore
+                  @@ protect (fun () ->
+                      wait_listeners :=
+                        List.filter
+                          ~f:(fun w -> Option.is_none w.result)
+                          !wait_listeners);
+                  Stdlib.Condition.signal wl.condition)
+                else ())
+              !wait_listeners;
+            ignore
+            @@ protect (fun () ->
+                slave.bytes_sent <-
+                  slave.bytes_sent + String.length command_payload))
+          else (
+            Stdlib.Printf.printf "Not the same %d != %d" slave.bytes_ack
+              slave.bytes_sent;
+            Stdlib.flush Stdlib.stdout)
       | _ -> Stdlib.print_endline "unknown resp - not an ack")
   | _ -> Stdlib.print_endline "unknown resp - not a list"
 
