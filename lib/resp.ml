@@ -119,8 +119,8 @@ let rec read_from_channel (channel : Stdlib.in_channel) : t * int =
         let count = read_line_int channel in
         List.range 0 count
         |> List.map ~f:(fun _ ->
-            let result, _ = read_from_channel channel in
-            result)
+               let result, _ = read_from_channel channel in
+               result)
         |> fun l -> RespList l
     | _ -> RespError "Error: not implemented"
   in

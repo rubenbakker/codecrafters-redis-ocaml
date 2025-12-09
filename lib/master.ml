@@ -42,3 +42,5 @@ let notify_slaves (command : Resp.t) : unit =
             :: !new_list)
         !state;
       state := !new_list)
+
+let num_slaves () : int = protect (fun () -> List.length !state)

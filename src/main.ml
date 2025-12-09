@@ -41,15 +41,18 @@ let send_to_master ((inch, outch) : Stdlib.in_channel * Stdlib.out_channel)
   Stdlib.flush outch;
   Resp.read_from_channel inch
 
+let send_to_master_no_answer
+    ((_, outch) : Stdlib.in_channel * Stdlib.out_channel) (payload : Resp.t) :
+    unit =
+  let payload = payload |> Resp.to_string in
+  Stdlib.Printf.fprintf outch "%s" payload;
+  Stdlib.flush outch
+
 let rec process_slave channels (context : Command.context_t)
     (acc_command_length : int) : unit =
   try
     let inch, _ = channels in
     let command, command_length = Resp.read_from_channel inch in
-    Stdlib.Printf.printf "%s -> l=%d -> al=%d\n"
-      (Sexp.to_string (Resp.to_sexp command))
-      command_length acc_command_length;
-    Stdlib.flush Stdlib.stdout;
     ignore
       ((match Command.parse_command_line command with
        | "replconf", [ "GETACK"; "*" ] ->
@@ -57,7 +60,7 @@ let rec process_slave channels (context : Command.context_t)
              ("REPLCONF", [ "ACK"; Int.to_string acc_command_length ])
              |> Command.resp_from_command
            in
-           ignore (send_to_master channels result)
+           send_to_master_no_answer channels result
        | _ ->
            ignore (Command.process context (Command.parse_command_line command)));
        process_slave channels context (acc_command_length + command_length))
@@ -97,12 +100,9 @@ let init_slave (host : string) (port : int) (slave_port : int) =
     |> send_to_master channels);
   ignore
     (create_command [ "REPLCONF"; "capa"; "psync2" ] |> send_to_master channels);
-  let x, _length =
-    create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master channels
-  in
-  Stdlib.print_endline (Resp.to_string x);
+  ignore (create_command [ "PSYNC"; "?"; "-1" ] |> send_to_master channels);
   (* rdb file *)
-  let _x = Resp.read_binary_from_channel in_channel in
+  ignore @@ Resp.read_binary_from_channel in_channel;
   ignore
     (Thread.create (fun () -> process_slave channels (empty_context ()) 0) ())
 
