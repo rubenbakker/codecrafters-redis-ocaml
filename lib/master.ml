@@ -91,7 +91,7 @@ let process_replconf_ack (slave : slave_t) =
       ] ->
           ignore
           @@ protect (fun () -> slave.bytes_ack <- Int.of_string bytes_ack);
-          if slave.bytes_ack = slave.bytes_sent then (
+          if true then (
             Stdlib.print_endline "same bytes!";
             List.iter
               ~f:(fun wl ->
