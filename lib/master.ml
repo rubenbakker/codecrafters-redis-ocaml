@@ -1,4 +1,20 @@
-type slave_t = { socket : Unix.file_descr; bytes_sent : int; bytes_ack : int }
+open! Base
+
+type slave_t = {
+  socket : Unix.file_descr;
+  mutable bytes_sent : int;
+  mutable bytes_ack : int;
+}
+
+type wait_listener_t = {
+  lock : Stdlib.Mutex.t;
+  condition : Stdlib.Condition.t;
+  num_required_slaves : int;
+  lifetime : Lifetime.t;
+  mutable num_ack_slaves : int;
+  mutable result : int option;
+}
+
 type t = { slaves : slave_t list }
 
 let state_lock = Stdlib.Mutex.create ()
@@ -15,6 +31,7 @@ let protect fn =
       fn ())
 
 let state : slave_t list ref = ref []
+let wait_listeners : wait_listener_t list ref = ref []
 
 let register_slave (socket : Unix.file_descr) (rdb : Resp.t option) : unit =
   protect (fun () ->
@@ -30,17 +47,98 @@ let register_slave (socket : Unix.file_descr) (rdb : Resp.t option) : unit =
 
 let notify_slaves (command : Resp.t) : unit =
   protect (fun () ->
-      let new_list : slave_t list ref = ref [] in
       List.iter
-        (fun slave ->
+        ~f:(fun slave ->
           let result = Resp.to_string command in
           let payload_length = String.length result in
           ignore
             (Unix.write slave.socket (Bytes.of_string result) 0 payload_length);
-          new_list :=
-            { slave with bytes_sent = slave.bytes_sent + payload_length }
-            :: !new_list)
-        !state;
-      state := !new_list)
+          slave.bytes_sent <- slave.bytes_sent + payload_length;
+          ())
+        !state)
 
-let num_slaves () : int = protect (fun () -> List.length !state)
+let num_insync_slaves () : int =
+  protect (fun () ->
+      !state
+      |> List.filter ~f:(fun slave -> slave.bytes_sent = slave.bytes_ack)
+      |> List.length)
+
+let process_replconf_ack (slave : slave_t) =
+  let command =
+    Resp.RespList
+      [
+        Resp.BulkString "REPLCONF";
+        Resp.BulkString "GETACK";
+        Resp.BulkString "*";
+      ]
+  in
+  Stdlib.print_endline (Sexp.to_string (Resp.to_sexp command));
+  let command_payload = Resp.to_string command in
+  let outch = Unix.out_channel_of_descr slave.socket in
+  Stdlib.Printf.fprintf outch "%s" command_payload;
+  Stdlib.flush outch;
+  let inch = Unix.in_channel_of_descr slave.socket in
+  Stdlib.print_endline "reading from in channel";
+  match Resp.read_from_channel inch with
+  | Resp.RespList l, _ -> (
+      Stdlib.print_endline "got result";
+      Stdlib.print_endline (Sexp.to_string (Resp.to_sexp (RespList l)));
+      match l with
+      | [
+       Resp.BulkString "REPLCONF";
+       Resp.BulkString "ACK";
+       Resp.BulkString bytes_ack;
+      ] ->
+          ignore
+          @@ protect (fun () -> slave.bytes_ack <- Int.of_string bytes_ack);
+          List.iter
+            ~f:(fun wl ->
+              wl.num_ack_slaves <- wl.num_ack_slaves + 1;
+              Stdlib.print_endline ">>> num_ack_slaves";
+              Stdlib.print_int wl.num_ack_slaves;
+              Stdlib.print_int wl.num_required_slaves;
+              Stdlib.print_endline "<<<";
+              if wl.num_ack_slaves >= wl.num_required_slaves then (
+                wl.result <- Some wl.num_ack_slaves;
+                ignore
+                @@ protect (fun () ->
+                    wait_listeners :=
+                      List.filter
+                        ~f:(fun w -> Option.is_none w.result)
+                        !wait_listeners);
+                Stdlib.Condition.signal wl.condition)
+              else ())
+            !wait_listeners;
+          ignore
+          @@ protect (fun () ->
+              slave.bytes_sent <-
+                slave.bytes_sent + String.length command_payload)
+      | _ -> Stdlib.print_endline "unknown resp - not an ack")
+  | _ -> Stdlib.print_endline "unknown resp - not a list"
+
+let start_sync_slaves () =
+  List.iter
+    ~f:(fun slave ->
+      ignore @@ Thread.create (fun () -> process_replconf_ack slave) ())
+    !state
+
+let sync_slaves_for_listener (required_slaves : int) (lifetime : Lifetime.t) :
+    int =
+  let current_insync_slaves = num_insync_slaves () in
+  if current_insync_slaves >= required_slaves then current_insync_slaves
+  else
+    let listener =
+      {
+        lock = Stdlib.Mutex.create ();
+        condition = Stdlib.Condition.create ();
+        num_required_slaves = required_slaves;
+        num_ack_slaves = current_insync_slaves;
+        lifetime;
+        result = None;
+      }
+    in
+    ignore (protect (fun () -> wait_listeners := listener :: !wait_listeners));
+    start_sync_slaves ();
+    Stdlib.Mutex.lock listener.lock;
+    Stdlib.Condition.wait listener.condition listener.lock;
+    listener.num_ack_slaves

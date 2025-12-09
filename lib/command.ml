@@ -136,13 +136,13 @@ let blpop (key : string) (timeout : string) : Resp.t =
 
 let type_cmd (key : string) : Resp.t =
   (match Store.get key with
-  | None -> "none"
-  | Some v -> (
-      match v with
-      | Store.StorageInt _ -> "integer"
-      | Store.StorageList _ -> "list"
-      | Store.StorageString _ -> "string"
-      | Store.StorageStream _ -> "stream"))
+    | None -> "none"
+    | Some v -> (
+        match v with
+        | Store.StorageInt _ -> "integer"
+        | Store.StorageList _ -> "list"
+        | Store.StorageString _ -> "string"
+        | Store.StorageStream _ -> "stream"))
   |> fun v -> Resp.SimpleString v
 
 let echo (message : string) : Resp.t = Resp.BulkString message
@@ -160,7 +160,7 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   let from_ids = List.sub rest ~pos:count ~len:(List.length rest - count) in
   List.zip_exn keys from_ids
   |> List.map ~f:(fun (key, from_id) ->
-         Store.query key store_to_stream (Streams.xread key from_id timeout))
+      Store.query key store_to_stream (Streams.xread key from_id timeout))
   |> fun l ->
   match l with
   | [ Resp.NullArray ] | [] -> Resp.NullArray
@@ -185,8 +185,10 @@ let multi (context : context_t) : Resp.t * context_t =
 
 let replconf (_args : string list) : Resp.t = Resp.SimpleString "OK"
 
-let wait (_num_replicas : string) (_timeout_ms : string) : Resp.t =
-  Resp.Integer (Master.num_slaves ())
+let wait (required_slaves : string) (_timeout_ms : string) : Resp.t =
+  let required_slaves = Int.of_string required_slaves in
+  Resp.Integer
+    (Master.sync_slaves_for_listener required_slaves Lifetime.Forever)
 
 let psync (context : context_t) (_args : string list) : Resp.t * context_t =
   let decoded_rdb_result =
@@ -263,8 +265,8 @@ let exec (context : context_t) : Resp.t * context_t =
   | Some queue ->
       Queue.to_list queue
       |> List.map ~f:(fun command ->
-             let result, _ = process_command context command in
-             result)
+          let result, _ = process_command context command in
+          result)
       |> fun list_of_resp ->
       (Resp.RespList list_of_resp, { context with command_queue = None })
 

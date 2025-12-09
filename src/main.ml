@@ -44,6 +44,8 @@ let send_to_master ((inch, outch) : Stdlib.in_channel * Stdlib.out_channel)
 let send_to_master_no_answer
     ((_, outch) : Stdlib.in_channel * Stdlib.out_channel) (payload : Resp.t) :
     unit =
+  Stdlib.print_endline "SLAVE: Sending result";
+  Stdlib.print_endline (Sexp.to_string (Resp.to_sexp payload));
   let payload = payload |> Resp.to_string in
   Stdlib.Printf.fprintf outch "%s" payload;
   Stdlib.flush outch
@@ -53,6 +55,7 @@ let rec process_slave channels (context : Command.context_t)
   try
     let inch, _ = channels in
     let command, command_length = Resp.read_from_channel inch in
+    Stdlib.print_endline (Sexp.to_string (Resp.to_sexp command));
     ignore
       ((match Command.parse_command_line command with
        | "replconf", [ "GETACK"; "*" ] ->
@@ -68,7 +71,9 @@ let rec process_slave channels (context : Command.context_t)
   | Unix_error (ECONNRESET, _, _) ->
       Stdlib.print_endline "Error: unix error - reset connection"
   | End_of_file -> Stdlib.print_endline "Error: end of file"
-  | _ -> Stdlib.print_endline "Error: Unknown"
+  | e ->
+      Stdlib.print_endline "Error: Unknown";
+      Stdlib.print_endline (Stdlib.Printexc.to_string e)
 
 let run_and_close_client client_socket =
   let finally () = close client_socket in
