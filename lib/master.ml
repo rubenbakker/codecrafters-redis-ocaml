@@ -2,6 +2,7 @@ open! Base
 
 type slave_t = {
   socket : Unix.file_descr;
+  mutable pending_write : bool;
   mutable bytes_sent : int;
   mutable bytes_ack : int;
 }
@@ -35,7 +36,9 @@ let wait_listeners : wait_listener_t list ref = ref []
 
 let register_slave (socket : Unix.file_descr) (rdb : Resp.t option) : unit =
   protect (fun () ->
-      state := { socket; bytes_sent = 0; bytes_ack = 0 } :: !state);
+      state :=
+        { socket; pending_write = false; bytes_sent = 0; bytes_ack = 0 }
+        :: !state);
   match rdb with
   | Some rdb ->
       let rdb_string = Resp.to_string rdb in
@@ -53,6 +56,7 @@ let notify_slaves (command : Resp.t) : unit =
           let payload_length = String.length result in
           ignore
             (Unix.write slave.socket (Bytes.of_string result) 0 payload_length);
+          slave.pending_write <- true;
           slave.bytes_sent <- slave.bytes_sent + payload_length;
           ())
         !state)
@@ -60,7 +64,8 @@ let notify_slaves (command : Resp.t) : unit =
 let num_insync_slaves () : int =
   protect (fun () ->
       !state
-      |> List.filter ~f:(fun slave -> slave.bytes_sent = slave.bytes_ack)
+      |> List.filter ~f:(fun slave ->
+          (not slave.pending_write) || slave.bytes_sent = slave.bytes_ack)
       |> List.length)
 
 let process_replconf_ack (slave : slave_t) =
@@ -91,7 +96,9 @@ let process_replconf_ack (slave : slave_t) =
          Resp.BulkString bytes_ack;
         ] ->
             ignore
-            @@ protect (fun () -> slave.bytes_ack <- Int.of_string bytes_ack);
+            @@ protect (fun () ->
+                slave.bytes_ack <- Int.of_string bytes_ack;
+                slave.pending_write <- false);
             if true then (
               Stdlib.print_endline "same bytes!";
               List.iter
