@@ -65,7 +65,7 @@ let num_insync_slaves () : int =
   protect (fun () ->
       !state
       |> List.filter ~f:(fun slave ->
-          (not slave.pending_write) || slave.bytes_sent = slave.bytes_ack)
+             (not slave.pending_write) || slave.bytes_sent = slave.bytes_ack)
       |> List.length)
 
 let process_replconf_ack (slave : slave_t) =
@@ -97,8 +97,8 @@ let process_replconf_ack (slave : slave_t) =
         ] ->
             ignore
             @@ protect (fun () ->
-                slave.bytes_ack <- Int.of_string bytes_ack;
-                slave.pending_write <- false);
+                   slave.bytes_ack <- Int.of_string bytes_ack;
+                   slave.pending_write <- false);
             if true then (
               Stdlib.print_endline "same bytes!";
               List.iter
@@ -112,17 +112,17 @@ let process_replconf_ack (slave : slave_t) =
                     wl.result <- Some wl.num_ack_slaves;
                     ignore
                     @@ protect (fun () ->
-                        wait_listeners :=
-                          List.filter
-                            ~f:(fun w -> Option.is_none w.result)
-                            !wait_listeners);
+                           wait_listeners :=
+                             List.filter
+                               ~f:(fun w -> Option.is_none w.result)
+                               !wait_listeners);
                     Stdlib.Condition.signal wl.condition)
                   else ())
                 !wait_listeners;
               ignore
               @@ protect (fun () ->
-                  slave.bytes_sent <-
-                    slave.bytes_sent + String.length command_payload))
+                     slave.bytes_sent <-
+                       slave.bytes_sent + String.length command_payload))
             else (
               Stdlib.Printf.printf "Not the same %d != %d" slave.bytes_ack
                 slave.bytes_sent;
@@ -158,3 +158,27 @@ let sync_slaves_for_listener (required_slaves : int) (lifetime : Lifetime.t) :
     Stdlib.Mutex.lock listener.lock;
     Stdlib.Condition.wait listener.condition listener.lock;
     listener.num_ack_slaves
+
+let rec remove_expired_entries_loop () : unit =
+  protect (fun () ->
+      let current_time = Lifetime.now () in
+      List.iter
+        ~f:(fun wl ->
+          let expired =
+            match wl.lifetime with
+            | Lifetime.Forever -> false
+            | Lifetime.Expires e -> e < current_time
+          in
+          if expired then Stdlib.Condition.signal wl.condition)
+        !wait_listeners;
+      wait_listeners :=
+        List.filter
+          ~f:(fun wl ->
+            match wl.lifetime with
+            | Lifetime.Expires e -> e >= current_time
+            | Forever -> true)
+          !wait_listeners);
+  Thread.delay 0.1;
+  remove_expired_entries_loop ()
+
+let start_gc () : Thread.t = Thread.create remove_expired_entries_loop ()
