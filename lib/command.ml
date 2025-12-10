@@ -183,7 +183,9 @@ let multi (context : context_t) : Resp.t * context_t =
   let context = { context with command_queue = Some (Queue.create ()) } in
   (Resp.SimpleString "OK", context)
 
-let replconf (_args : string list) : Resp.t = Resp.SimpleString "OK"
+let replconf (_args : string list) : Resp.t =
+  Stdlib.Printf.printf "replconf: %s" (String.concat _args);
+  Resp.SimpleString "OK"
 
 let wait (required_slaves : string) (timeout_ms : string) : Resp.t =
   let required_slaves = Int.of_string required_slaves in
