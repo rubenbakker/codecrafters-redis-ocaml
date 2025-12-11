@@ -197,10 +197,13 @@ let replconf (context : context_t) (args : string list) : Resp.t =
       | _ -> Resp.SimpleString "OK")
   | None -> Resp.SimpleString "OK"
 
-let wait (required_slaves : string) (_timeout_ms : string) : Resp.t =
+let wait (required_slaves : string) (timeout_ms : string) : Resp.t =
   let required_slaves = Int.of_string required_slaves in
-  Resp.Integer
-    (Master.sync_slaves_for_listener required_slaves Lifetime.Forever)
+  let lifetime =
+    Lifetime.create_expiry_with_ms (Int.of_string timeout_ms)
+    |> Lifetime.to_abolute_expires
+  in
+  Resp.Integer (Master.sync_slaves_for_listener required_slaves lifetime)
 
 let psync (context : context_t) (_args : string list) : Resp.t * context_t =
   let decoded_rdb_result =

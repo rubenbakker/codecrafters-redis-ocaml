@@ -134,6 +134,7 @@ let () =
   listen server_socket 10;
   ignore (Store.start_gc ());
   ignore (Store.start_expire_listeners ());
+  ignore (Master.start_gc ());
   (match options.role with
   | Slave (host, port) -> init_slave host port options.port
   | Master -> ());

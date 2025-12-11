@@ -140,3 +140,27 @@ let sync_slaves_for_listener (required_slaves : int) (lifetime : Lifetime.t) :
     Stdlib.Mutex.lock listener.lock;
     Stdlib.Condition.wait listener.condition listener.lock;
     listener.num_ack_slaves
+
+let rec remove_expired_entries_loop () : unit =
+  protect (fun () ->
+      let current_time = Lifetime.now () in
+      List.iter
+        ~f:(fun wl ->
+          let expired =
+            match wl.lifetime with
+            | Lifetime.Forever -> false
+            | Lifetime.Expires e -> e < current_time
+          in
+          if expired then Stdlib.Condition.signal wl.condition)
+        !wait_listeners;
+      wait_listeners :=
+        List.filter
+          ~f:(fun wl ->
+            match wl.lifetime with
+            | Lifetime.Expires e -> e >= current_time
+            | Forever -> true)
+          !wait_listeners);
+  Thread.delay 0.1;
+  remove_expired_entries_loop ()
+
+let start_gc () : Thread.t = Thread.create remove_expired_entries_loop ()
