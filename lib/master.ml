@@ -34,19 +34,20 @@ let protect fn =
 let state : slave_t list ref = ref []
 let wait_listeners : wait_listener_t list ref = ref []
 
-let register_slave (socket : Unix.file_descr) (rdb : Resp.t option) : unit =
-  protect (fun () ->
-      state :=
-        { socket; pending_write = false; bytes_sent = 0; bytes_ack = 0 }
-        :: !state);
-  match rdb with
+let register_slave (socket : Unix.file_descr) (rdb : Resp.t option) : slave_t =
+  let slave =
+    { socket; pending_write = false; bytes_sent = 0; bytes_ack = 0 }
+  in
+  protect (fun () -> state := slave :: !state);
+  (match rdb with
   | Some rdb ->
       let rdb_string = Resp.to_string rdb in
       ignore
         (Unix.write socket
            (Bytes.of_string rdb_string)
            0 (String.length rdb_string))
-  | None -> ()
+  | None -> ());
+  slave
 
 let notify_slaves (command : Resp.t) : unit =
   protect (fun () ->
@@ -68,7 +69,7 @@ let num_insync_slaves () : int =
           (not slave.pending_write) || slave.bytes_sent = slave.bytes_ack)
       |> List.length)
 
-let process_replconf_ack (slave : slave_t) =
+let send_replconf_getack (slave : slave_t) : unit =
   let command =
     Resp.RespList
       [
@@ -77,66 +78,47 @@ let process_replconf_ack (slave : slave_t) =
         Resp.BulkString "*";
       ]
   in
-  Stdlib.print_endline (Sexp.to_string (Resp.to_sexp command));
   let command_payload = Resp.to_string command in
   let outch = Unix.out_channel_of_descr slave.socket in
   Stdlib.Printf.fprintf outch "%s" command_payload;
   Stdlib.flush outch;
-  let inch = Unix.in_channel_of_descr slave.socket in
-  Stdlib.print_endline "reading from in channel";
-  try
-    match Resp.read_from_channel inch with
-    | Resp.RespList l, _ -> (
-        Stdlib.print_endline "got result";
-        Stdlib.print_endline (Sexp.to_string (Resp.to_sexp (RespList l)));
-        match l with
-        | [
-         Resp.BulkString "REPLCONF";
-         Resp.BulkString "ACK";
-         Resp.BulkString bytes_ack;
-        ] ->
-            ignore
-            @@ protect (fun () ->
-                slave.bytes_ack <- Int.of_string bytes_ack;
-                slave.pending_write <- false);
-            if true then (
-              Stdlib.print_endline "same bytes!";
-              List.iter
-                ~f:(fun wl ->
-                  wl.num_ack_slaves <- wl.num_ack_slaves + 1;
-                  Stdlib.print_endline ">>> num_ack_slaves";
-                  Stdlib.print_int wl.num_ack_slaves;
-                  Stdlib.print_int wl.num_required_slaves;
-                  Stdlib.print_endline "<<<";
-                  if wl.num_ack_slaves >= wl.num_required_slaves then (
-                    wl.result <- Some wl.num_ack_slaves;
-                    ignore
-                    @@ protect (fun () ->
-                        wait_listeners :=
-                          List.filter
-                            ~f:(fun w -> Option.is_none w.result)
-                            !wait_listeners);
-                    Stdlib.Condition.signal wl.condition)
-                  else ())
-                !wait_listeners;
-              ignore
-              @@ protect (fun () ->
-                  slave.bytes_sent <-
-                    slave.bytes_sent + String.length command_payload))
-            else (
-              Stdlib.Printf.printf "Not the same %d != %d" slave.bytes_ack
-                slave.bytes_sent;
-              Stdlib.flush Stdlib.stdout)
-        | _ -> Stdlib.print_endline "unknown resp - not an ack")
-    | _ -> Stdlib.print_endline "unknown resp - not a list"
-  with End_of_file ->
-    Stdlib.print_endline "end of file received waiting for slave"
+  Stdlib.Printf.printf "MASTER: sent %s\n"
+    (Sexp.to_string (Resp.to_sexp command));
+  Stdlib.flush Stdlib.stdout
+
+let process_replconf_ack (slave : slave_t) (bytes_ack : int) : unit =
+  ignore
+  @@ protect (fun () ->
+      slave.bytes_ack <- bytes_ack;
+      slave.pending_write <- false);
+  if true then (
+    Stdlib.print_endline "same bytes!";
+    List.iter
+      ~f:(fun wl ->
+        wl.num_ack_slaves <- wl.num_ack_slaves + 1;
+        Stdlib.print_endline ">>> num_ack_slaves";
+        Stdlib.print_int wl.num_ack_slaves;
+        Stdlib.print_int wl.num_required_slaves;
+        Stdlib.print_endline "<<<";
+        if wl.num_ack_slaves >= wl.num_required_slaves then (
+          wl.result <- Some wl.num_ack_slaves;
+          ignore
+          @@ protect (fun () ->
+              wait_listeners :=
+                List.filter
+                  ~f:(fun w -> Option.is_none w.result)
+                  !wait_listeners);
+          Stdlib.Condition.signal wl.condition)
+        else ())
+      !wait_listeners;
+    ignore @@ protect (fun () -> slave.bytes_sent <- slave.bytes_sent + 34))
+  else (
+    Stdlib.Printf.printf "Not the same %d != %d" slave.bytes_ack
+      slave.bytes_sent;
+    Stdlib.flush Stdlib.stdout)
 
 let start_sync_slaves () =
-  List.iter
-    ~f:(fun slave ->
-      ignore @@ Thread.create (fun () -> process_replconf_ack slave) ())
-    !state
+  List.iter ~f:(fun slave -> ignore @@ send_replconf_getack slave) !state
 
 let sync_slaves_for_listener (required_slaves : int) (lifetime : Lifetime.t) :
     int =

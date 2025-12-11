@@ -15,6 +15,7 @@ type context_t = {
   role : Options.role_t;
   command_queue : command_queue_t option;
   post_process : post_process_t;
+  slave : Master.slave_t option;
 }
 
 let parse_command_line (command : Resp.t) : string * string list =
@@ -29,6 +30,7 @@ let parse_command_line (command : Resp.t) : string * string list =
     | Resp.RespBinary _str -> ""
     | Resp.RespConcat _l -> ""
     | Resp.RespError error -> error
+    | Resp.RespIgnore -> ""
   in
   match command with
   | Resp.RespList (Resp.BulkString command :: rest) ->
@@ -183,7 +185,17 @@ let multi (context : context_t) : Resp.t * context_t =
   let context = { context with command_queue = Some (Queue.create ()) } in
   (Resp.SimpleString "OK", context)
 
-let replconf (_args : string list) : Resp.t = Resp.SimpleString "OK"
+let replconf (context : context_t) (args : string list) : Resp.t =
+  Stdlib.Printf.printf "MASTER: replconf %s\n" (String.concat ~sep:"," args);
+  Stdlib.flush Stdlib.stdout;
+  match context.slave with
+  | Some slave -> (
+      match args with
+      | [ "ACK"; bytes_ack ] ->
+          Master.process_replconf_ack slave (Int.of_string bytes_ack);
+          Resp.RespIgnore
+      | _ -> Resp.SimpleString "OK")
+  | None -> Resp.SimpleString "OK"
 
 let wait (required_slaves : string) (_timeout_ms : string) : Resp.t =
   let required_slaves = Int.of_string required_slaves in
@@ -250,7 +262,7 @@ let process_command (context : context_t) (command : command_t) :
   | "xread", _ :: rest -> readonly_command context @@ xread rest None
   | "exec", [] -> (Resp.RespError "ERR EXEC without MULTI", context)
   | "discard", [] -> (Resp.RespError "ERR DISCARD without MULTI", context)
-  | "replconf", rest -> readonly_command context @@ replconf rest
+  | "replconf", rest -> readonly_command context @@ replconf context rest
   | "psync", rest -> psync context rest
   | "info", rest -> readonly_command context @@ info rest
   | "wait", [ num_replicas; timeout_ms ] ->

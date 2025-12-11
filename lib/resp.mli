@@ -10,6 +10,7 @@ type t =
   | RespBinary of string
   | RespConcat of t list
   | RespError of string
+  | RespIgnore
 
 val from_string : string -> int -> t
 val to_string : t -> string

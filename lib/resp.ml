@@ -10,6 +10,7 @@ type t =
   | RespBinary of string
   | RespConcat of t list
   | RespError of string
+  | RespIgnore
 [@@deriving compare, equal, sexp]
 
 exception InvalidData
@@ -75,6 +76,7 @@ let rec to_string (item : t) : string =
   | RespConcat list ->
       String.concat ~sep:"" (List.map ~f:(fun x -> to_string x) list)
   | RespError error -> Printf.sprintf "-%s\r\n" error
+  | RespIgnore -> ""
 
 let to_sexp (input : t) : Sexp.t = sexp_of_t input
 let to_simple_string (str : string) : string = SimpleString str |> to_string
@@ -119,8 +121,8 @@ let rec read_from_channel (channel : Stdlib.in_channel) : t * int =
         let count = read_line_int channel in
         List.range 0 count
         |> List.map ~f:(fun _ ->
-               let result, _ = read_from_channel channel in
-               result)
+            let result, _ = read_from_channel channel in
+            result)
         |> fun l -> RespList l
     | _ -> RespError "Error: not implemented"
   in

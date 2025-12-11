@@ -4,16 +4,23 @@ open Lib
 
 let empty_context () : Command.context_t =
   let options = Options.parse_options (Sys.get_argv ()) in
-  { role = options.role; command_queue = None; post_process = Noop }
+  {
+    role = options.role;
+    command_queue = None;
+    post_process = Noop;
+    slave = None;
+  }
 
 let post_process_command (context : Command.context_t)
     (client_socket : file_descr) : Command.context_t =
-  ignore
-    (match context.post_process with
-    | RegisterSlave rdb -> Master.register_slave client_socket rdb
-    | Mutation command | Propagate command -> Master.notify_slaves command
-    | Noop -> ());
-  { context with post_process = Noop }
+  match context.post_process with
+  | RegisterSlave rdb ->
+      let slave = Master.register_slave client_socket rdb in
+      { context with slave = Some slave }
+  | Mutation command | Propagate command ->
+      Master.notify_slaves command;
+      context
+  | Noop -> context
 
 let rec process_client client_socket (context : Command.context_t) =
   try
@@ -27,7 +34,7 @@ let rec process_client client_socket (context : Command.context_t) =
     Stdlib.Printf.fprintf out_channel "%s" result;
     Stdlib.flush out_channel;
     let context = post_process_command context client_socket in
-    process_client client_socket context
+    process_client client_socket { context with post_process = Noop }
   with
   | Unix_error (ECONNRESET, _, _) ->
       Stdlib.print_endline "Error: unix error - reset connection"
@@ -48,14 +55,16 @@ let send_to_master_no_answer
   Stdlib.print_endline (Sexp.to_string (Resp.to_sexp payload));
   let payload = payload |> Resp.to_string in
   Stdlib.Printf.fprintf outch "%s" payload;
-  Stdlib.flush outch
+  Stdlib.flush outch;
+  Stdlib.print_endline "finished sending"
 
 let rec process_slave channels (context : Command.context_t)
     (acc_command_length : int) : unit =
   try
+    Stdlib.print_endline "SLAVE: slave read";
     let inch, _ = channels in
     let command, command_length = Resp.read_from_channel inch in
-    Stdlib.Printf.printf "SLAVE: received %s"
+    Stdlib.Printf.printf "SLAVE: received %s\n"
       (Sexp.to_string (Resp.to_sexp command));
     Stdlib.flush Stdlib.stdout;
     ignore
@@ -75,7 +84,9 @@ let rec process_slave channels (context : Command.context_t)
   | End_of_file -> Stdlib.print_endline "Error: end of file"
   | e ->
       Stdlib.print_endline "Error: Unknown";
-      Stdlib.print_endline (Stdlib.Printexc.to_string e)
+      Stdlib.print_endline (Stdlib.Printexc.to_string e);
+      Stdlib.Printexc.print_backtrace Stdlib.stdout;
+      Stdlib.flush Stdlib.stdout
 
 let run_and_close_client client_socket =
   let finally () = close client_socket in

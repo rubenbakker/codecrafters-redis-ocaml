@@ -13,6 +13,7 @@ type context_t = {
   role : Options.role_t;
   command_queue : command_queue_t option;
   post_process : post_process_t;
+  slave : Master.slave_t option;
 }
 
 val parse_command_line : Resp.t -> command_t
