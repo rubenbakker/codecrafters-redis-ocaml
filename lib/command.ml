@@ -181,12 +181,20 @@ let info (args : string list) : Resp.t =
       | Slave _ -> Resp.BulkString "role:slave")
   | _ -> Resp.RespError "ERR Unknown role"
 
-let config_get () : Resp.t =
+let config_get (name : string) : Resp.t =
   let options = Options.parse_options (Sys.get_argv ()) in
   match options.rdb with
   | None -> Resp.RespError "ERR: No config to read"
   | Some rdb ->
-      RespList [ Resp.BulkString rdb.dir; Resp.BulkString rdb.filename ]
+      RespList
+        [
+          Resp.BulkString name;
+          Resp.BulkString
+            (match name with
+            | "dir" -> rdb.dir
+            | "dbfilename" -> rdb.filename
+            | _ -> "");
+        ]
 
 let multi (context : context_t) : Resp.t * context_t =
   let context = { context with command_queue = Some (Queue.create ()) } in
@@ -277,7 +285,7 @@ let process_command (context : context_t) (command : command_t) :
   | "info", rest -> readonly_command context @@ info rest
   | "wait", [ num_replicas; timeout_ms ] ->
       readonly_command context @@ wait num_replicas timeout_ms
-  | "config", [ "GET"; _ ] -> readonly_command context @@ config_get ()
+  | "config", [ "GET"; name ] -> readonly_command context @@ config_get name
   | _ -> (Resp.Null, context)
 
 let exec (context : context_t) : Resp.t * context_t =
