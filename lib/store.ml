@@ -74,11 +74,11 @@ let notify_listeners (listener_queue : listener Queue.t)
     (resp_items : Resp.t list) : unit =
   resp_items
   |> List.iter ~f:(fun value ->
-      match Queue.dequeue listener_queue with
-      | None -> ()
-      | Some listener ->
-          listener.result <- Some value;
-          Stdlib.Condition.signal listener.condition)
+         match Queue.dequeue listener_queue with
+         | None -> ()
+         | Some listener ->
+             listener.result <- Some value;
+             Stdlib.Condition.signal listener.condition)
 
 let get_no_lock (key : string) : t option =
   match StringMap.find_opt key !repo with
@@ -130,6 +130,10 @@ let query (key : string) (convert : t option -> 'a option)
   in
   wait_result outcome
 
+let keys (_pattern : string) : string list =
+  protect (fun () ->
+      StringMap.to_list !repo |> List.map ~f:(fun (key, _) -> key))
+
 let mutate (key : string) (lifetime : Lifetime.t)
     (from_store : 't option -> 'a option) (to_store : 'a option -> t option)
     (fn : int -> 'a option -> 'a Storeop.mutation_result) : Resp.t =
@@ -174,7 +178,7 @@ let rec expire_listeners () : unit =
             Queue.filter queue ~f:(fun listener ->
                 Lifetime.has_expired current_time listener.lifetime)
             |> Queue.iter ~f:(fun listener ->
-                Stdlib.Condition.signal listener.condition);
+                   Stdlib.Condition.signal listener.condition);
             let new_queue =
               Queue.filter queue ~f:(fun listener ->
                   not (Lifetime.has_expired current_time listener.lifetime))

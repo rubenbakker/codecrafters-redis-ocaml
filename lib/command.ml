@@ -138,13 +138,13 @@ let blpop (key : string) (timeout : string) : Resp.t =
 
 let type_cmd (key : string) : Resp.t =
   (match Store.get key with
-    | None -> "none"
-    | Some v -> (
-        match v with
-        | Store.StorageInt _ -> "integer"
-        | Store.StorageList _ -> "list"
-        | Store.StorageString _ -> "string"
-        | Store.StorageStream _ -> "stream"))
+  | None -> "none"
+  | Some v -> (
+      match v with
+      | Store.StorageInt _ -> "integer"
+      | Store.StorageList _ -> "list"
+      | Store.StorageString _ -> "string"
+      | Store.StorageStream _ -> "stream"))
   |> fun v -> Resp.SimpleString v
 
 let echo (message : string) : Resp.t = Resp.BulkString message
@@ -162,7 +162,7 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   let from_ids = List.sub rest ~pos:count ~len:(List.length rest - count) in
   List.zip_exn keys from_ids
   |> List.map ~f:(fun (key, from_id) ->
-      Store.query key store_to_stream (Streams.xread key from_id timeout))
+         Store.query key store_to_stream (Streams.xread key from_id timeout))
   |> fun l ->
   match l with
   | [ Resp.NullArray ] | [] -> Resp.NullArray
@@ -235,6 +235,10 @@ let psync (context : context_t) (_args : string list) : Resp.t * context_t =
   in
   (result, { context with post_process = RegisterSlave rdb })
 
+let keys (pattern : string) : Resp.t =
+  Store.keys pattern |> List.map ~f:(fun k -> Resp.BulkString k) |> fun l ->
+  Resp.RespList l
+
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
   (result, context)
@@ -286,6 +290,7 @@ let process_command (context : context_t) (command : command_t) :
   | "wait", [ num_replicas; timeout_ms ] ->
       readonly_command context @@ wait num_replicas timeout_ms
   | "config", [ "GET"; name ] -> readonly_command context @@ config_get name
+  | "keys", [ pattern ] -> readonly_command context @@ keys pattern
   | _ -> (Resp.Null, context)
 
 let exec (context : context_t) : Resp.t * context_t =
@@ -296,8 +301,8 @@ let exec (context : context_t) : Resp.t * context_t =
   | Some queue ->
       Queue.to_list queue
       |> List.map ~f:(fun command ->
-          let result, _ = process_command context command in
-          result)
+             let result, _ = process_command context command in
+             result)
       |> fun list_of_resp ->
       (Resp.RespList list_of_resp, { context with command_queue = None })
 

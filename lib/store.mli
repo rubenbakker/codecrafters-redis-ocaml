@@ -7,6 +7,7 @@ type t =
 val get : string -> t option
 val set : string -> t -> Lifetime.t -> unit
 val query : string -> (t option -> 'a option) -> 'a Storeop.query_fn_t -> Resp.t
+val keys : string -> string list
 
 val pop_list_or_wait :
   string ->
