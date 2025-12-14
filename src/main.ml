@@ -126,11 +126,12 @@ let init_slave (host : string) (port : int) (slave_port : int) =
 
 let load_rdb (rdb : Options.rdb_t) : unit =
   let path = Stdlib.Filename.concat rdb.dir rdb.filename in
-  match Rdb.read path with
-  | Some rdb ->
-      List.iter rdb.hash_table ~f:(fun (key, value) ->
-          Store.set key (StorageString value) Lifetime.Forever)
-  | None -> ()
+  if Stdlib.Sys.file_exists path then
+    match Rdb.read path with
+    | Some rdb ->
+        List.iter rdb.hash_table ~f:(fun (key, value) ->
+            Store.set key (StorageString value) Lifetime.Forever)
+    | None -> ()
 
 let () =
   (* Create a TCP server socket *)
