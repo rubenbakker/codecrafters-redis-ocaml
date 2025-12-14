@@ -66,7 +66,7 @@ let num_insync_slaves () : int =
   protect (fun () ->
       !state
       |> List.filter ~f:(fun slave ->
-          (not slave.pending_write) || slave.bytes_sent = slave.bytes_ack)
+             (not slave.pending_write) || slave.bytes_sent = slave.bytes_ack)
       |> List.length)
 
 let send_replconf_getack (slave : slave_t) : unit =
@@ -89,8 +89,8 @@ let send_replconf_getack (slave : slave_t) : unit =
 let process_replconf_ack (slave : slave_t) (bytes_ack : int) : unit =
   ignore
   @@ protect (fun () ->
-      slave.bytes_ack <- bytes_ack;
-      slave.pending_write <- false);
+         slave.bytes_ack <- bytes_ack;
+         slave.pending_write <- false);
   if true then (
     Stdlib.print_endline "same bytes!";
     List.iter
@@ -104,10 +104,10 @@ let process_replconf_ack (slave : slave_t) (bytes_ack : int) : unit =
           wl.result <- Some wl.num_ack_slaves;
           ignore
           @@ protect (fun () ->
-              wait_listeners :=
-                List.filter
-                  ~f:(fun w -> Option.is_none w.result)
-                  !wait_listeners);
+                 wait_listeners :=
+                   List.filter
+                     ~f:(fun w -> Option.is_none w.result)
+                     !wait_listeners);
           Stdlib.Condition.signal wl.condition)
         else ())
       !wait_listeners;
@@ -149,7 +149,7 @@ let rec remove_expired_entries_loop () : unit =
           let expired =
             match wl.lifetime with
             | Lifetime.Forever -> false
-            | Lifetime.Expires e -> e < current_time
+            | Lifetime.Expires e -> Int64.(e < current_time)
           in
           if expired then Stdlib.Condition.signal wl.condition)
         !wait_listeners;
@@ -157,7 +157,7 @@ let rec remove_expired_entries_loop () : unit =
         List.filter
           ~f:(fun wl ->
             match wl.lifetime with
-            | Lifetime.Expires e -> e >= current_time
+            | Lifetime.Expires e -> Int64.(e >= current_time)
             | Forever -> true)
           !wait_listeners);
   Thread.delay 0.1;

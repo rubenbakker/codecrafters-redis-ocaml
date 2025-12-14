@@ -129,8 +129,8 @@ let load_rdb (rdb : Options.rdb_t) : unit =
   if Stdlib.Sys.file_exists path then
     match Rdb.read path with
     | Some rdb ->
-        List.iter rdb.hash_table ~f:(fun (key, value) ->
-            Store.set key (StorageString value) Lifetime.Forever)
+        List.iter rdb.hash_table ~f:(fun (key, (value, lifetime)) ->
+            Store.set key (StorageString value) lifetime)
     | None -> ()
 
 let () =

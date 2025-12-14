@@ -1,6 +1,10 @@
 open Base
 
-type t = { hash_table : (string * string) list } [@@deriving sexp]
+let echo = Stdlib.Printf.printf
+let fmt = Stdlib.Printf.sprintf
+
+type value_t = string * Lifetime.t
+type t = { hash_table : (string * value_t) list }
 
 let empty_rdb =
   Base64.decode_exn
@@ -30,14 +34,73 @@ let read_length (inch : In_channel.t) : int option =
       | None -> None)
   | _ -> None
 
+let rec read_int64 (inch : In_channel.t) (length : int) (acc : int64) :
+    int64 option =
+  if length = 0 then Some acc
+  else
+    match In_channel.input_char inch with
+    | Some ch ->
+        let v = Char.to_int ch |> Int64.of_int in
+        let open Int64 in
+        let acc' = acc lsl 8 in
+        let acc' = acc' lor v in
+        echo "read_int64 %d\n" length;
+        read_int64 inch Int.(length - 1) acc'
+    | None -> None
+
+let rec read_int (inch : In_channel.t) (length : int) (acc : int) : int option =
+  if length = 0 then Some acc
+  else
+    match In_channel.input_char inch with
+    | Some ch ->
+        let v = Char.to_int ch in
+        let acc' = acc lsl 8 in
+        let acc' = acc' lor v in
+        read_int inch (length - 1) acc'
+    | None -> None
+
 exception Debug
 exception RDB_Error of string
-
-let fmt = Stdlib.Printf.sprintf
 
 let read_string (inch : In_channel.t) : string option =
   let* length = read_length inch in
   In_channel.really_input_string inch length
+
+let read_key_value (inch : In_channel.t) : (string * string) option =
+  let* key = read_string inch in
+  let* value = read_string inch in
+  Some (key, value)
+
+let read_hash_table_entry (inch : In_channel.t) :
+    (string * (string * Lifetime.t)) option =
+  match In_channel.input_char inch with
+  | Some ch -> (
+      match Char.to_int ch with
+      | 0xFD ->
+          echo "reading seconds\n";
+          let* lifetime =
+            read_int64 inch 4 0L
+            |> Option.map ~f:(fun ms -> Lifetime.create_expiry_with_ms ms)
+          in
+          let* _type_char = In_channel.input_char inch in
+          let* key, value = read_key_value inch in
+          Some (key, (value, lifetime))
+      | 0xFC ->
+          echo "reading millis\n";
+          let* lifetime =
+            read_int64 inch 8 0L
+            |> Option.map ~f:(fun ms -> Lifetime.create_expiry_with_ms ms)
+          in
+          let* _type_char = In_channel.input_char inch in
+          let* key, value = read_key_value inch in
+          Some (key, (value, lifetime))
+      | ch ->
+          echo "reading other %x\n" ch;
+          Option.map (read_key_value inch) ~f:(fun (key, value) ->
+              (key, (value, Lifetime.Forever))))
+  | None ->
+      echo "nothing\n";
+      None
 
 let read (rdb_path : string) : t option =
   In_channel.with_open_bin rdb_path (fun inch ->
@@ -52,13 +115,14 @@ let read (rdb_path : string) : t option =
       if Char.to_int hash_table_section <> 0xFB then
         raise (RDB_Error "Expected hash table section");
       let* hash_table_length = read_length inch in
-      let* _expiry_table_length = read_length inch in
+      let* expiry_table_length = read_length inch in
+      echo "hash_table_length: %d %d\n" hash_table_length expiry_table_length;
       let hash_table =
         List.range 0 hash_table_length
-        |> List.map ~f:(fun _ ->
-               let _type_char = In_channel.input_char inch in
-               let key = Option.value_exn (read_string inch) in
-               let value = Option.value_exn (read_string inch) in
-               (key, value))
+        |> List.map ~f:(fun i ->
+               echo "reading entry %d \n" i;
+               let entry = read_hash_table_entry inch |> Option.value_exn in
+               entry)
       in
+      Stdlib.flush Stdio.stdout;
       Some { hash_table })

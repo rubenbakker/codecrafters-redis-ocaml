@@ -86,7 +86,7 @@ let get_no_lock (key : string) : t option =
   | Some (value, expiry) -> (
       match expiry with
       | Forever -> Some value
-      | Expires e -> if e >= Lifetime.now () then Some value else None)
+      | Expires e -> if Int64.(e >= Lifetime.now ()) then Some value else None)
 
 let set (key : string) (value : t) (expires : Lifetime.t) : unit =
   protect (fun () -> set_no_lock key value expires)
@@ -160,7 +160,7 @@ let rec remove_expired_entries_loop () : unit =
           (fun _ value ->
             match value with
             | _, Lifetime.Forever -> false
-            | _, Lifetime.Expires e -> e < current_time)
+            | _, Lifetime.Expires e -> Int64.(e < current_time))
           !repo
       in
       StringMap.iter

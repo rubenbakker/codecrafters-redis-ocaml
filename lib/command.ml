@@ -215,7 +215,7 @@ let replconf (context : context_t) (args : string list) : Resp.t =
 let wait (required_slaves : string) (timeout_ms : string) : Resp.t =
   let required_slaves = Int.of_string required_slaves in
   let lifetime =
-    Lifetime.create_expiry_with_ms (Int.of_string timeout_ms)
+    Lifetime.create_expiry_with_ms (Int64.of_string timeout_ms)
     |> Lifetime.to_abolute_expires
   in
   Resp.Integer (Master.sync_slaves_for_listener required_slaves lifetime)
