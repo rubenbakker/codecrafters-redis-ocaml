@@ -10,11 +10,12 @@ let%expect_test "read rdb header" =
   | Some rdb ->
       Stdlib.Printf.printf "Magic: %s, Version: %s\n\n" rdb.magic rdb.version;
       Stdlib.Printf.printf "Hashtable:\n";
-      List.iter rdb.hash_table ~f:(fun (value, key) ->
+      List.iter rdb.hash_table ~f:(fun (key, value) ->
           Stdlib.Printf.printf "%s -> %s\n" key value);
       Stdlib.flush Stdlib.stdout
   | None -> Stdlib.Printf.printf "None");
-  [%expect {|
+  [%expect
+    {|
     Magic: REDIS, Version: 0012
 
     Hashtable:

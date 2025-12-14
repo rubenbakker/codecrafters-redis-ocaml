@@ -124,6 +124,14 @@ let init_slave (host : string) (port : int) (slave_port : int) =
   ignore
     (Thread.create (fun () -> process_slave channels (empty_context ()) 0) ())
 
+let load_rdb (rdb : Options.rdb_t) : unit =
+  let path = Stdlib.Filename.concat rdb.dir rdb.filename in
+  match Rdb.read path with
+  | Some rdb ->
+      List.iter rdb.hash_table ~f:(fun (key, value) ->
+          Store.set key (StorageString value) Lifetime.Forever)
+  | None -> ()
+
 let () =
   (* Create a TCP server socket *)
   let options = Options.parse_options (Sys.get_argv ()) in
@@ -137,7 +145,7 @@ let () =
   ignore (Master.start_gc ());
   (match options.role with
   | Slave (host, port) -> init_slave host port options.port
-  | Master -> ());
+  | Master -> ( match options.rdb with Some rdb -> load_rdb rdb | None -> ()));
   try accept_loop server_socket []
   with e ->
     close server_socket;

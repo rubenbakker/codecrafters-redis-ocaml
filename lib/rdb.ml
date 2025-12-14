@@ -66,7 +66,8 @@ let read (rdb_path : string) : t option =
         List.range 0 hash_table_length
         |> List.map ~f:(fun _ ->
                let _type_char = In_channel.input_char inch in
-               ( Option.value_exn (read_string inch),
-                 Option.value_exn (read_string inch) ))
+               let key = Option.value_exn (read_string inch) in
+               let value = Option.value_exn (read_string inch) in
+               (key, value))
       in
       Some { magic; version; db_index; hash_table })
