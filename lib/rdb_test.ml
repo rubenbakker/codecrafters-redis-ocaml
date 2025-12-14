@@ -8,16 +8,12 @@ let%expect_test "read rdb header" =
      Rdb.read "/data/ruben/projects/private/codecrafters-redis-ocaml/dump.rdb"
    with
   | Some rdb ->
-      Stdlib.Printf.printf "Magic: %s, Version: %s\n\n" rdb.magic rdb.version;
       Stdlib.Printf.printf "Hashtable:\n";
       List.iter rdb.hash_table ~f:(fun (key, value) ->
           Stdlib.Printf.printf "%s -> %s\n" key value);
       Stdlib.flush Stdlib.stdout
   | None -> Stdlib.Printf.printf "None");
-  [%expect
-    {|
-    Magic: REDIS, Version: 0012
-
+  [%expect {|
     Hashtable:
     xxx -> roggwil
     |}]

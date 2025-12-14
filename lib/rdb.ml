@@ -1,14 +1,10 @@
 open Base
 
+type t = { hash_table : (string * string) list } [@@deriving sexp]
+
 let empty_rdb =
   Base64.decode_exn
     "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
-
-(* let read (rdb : string) = *)
-(*   let bs = Bitstring.bitstring_of_string rdb in *)
-(*   match%bitstring bs with *)
-(*   | {| "REDIS" : 5*8 : string ; version : 4*8 : string |} -> *)
-(*       Stdlib.Printf.printf "Version: %s\n" version *)
 
 let ( let* ) x f = Stdlib.Option.bind x f
 
@@ -19,8 +15,6 @@ let skip_to (inch : In_channel.t) (char : Char.t) : Char.t option =
     | None -> None
   in
   loop ()
-
-let echo = Stdlib.Printf.printf
 
 let read_length (inch : In_channel.t) : int option =
   let* ch = In_channel.input_char inch in
@@ -37,29 +31,26 @@ let read_length (inch : In_channel.t) : int option =
   | _ -> None
 
 exception Debug
+exception RDB_Error of string
+
+let fmt = Stdlib.Printf.sprintf
 
 let read_string (inch : In_channel.t) : string option =
   let* length = read_length inch in
   In_channel.really_input_string inch length
 
-type t = {
-  magic : string;
-  version : string;
-  db_index : int;
-  hash_table : (string * string) list;
-}
-[@@deriving sexp]
-
 let read (rdb_path : string) : t option =
   In_channel.with_open_bin rdb_path (fun inch ->
       let* magic = In_channel.really_input_string inch 5 in
-      let* version = In_channel.really_input_string inch 4 in
+      if String.(magic <> "REDIS") then
+        raise (RDB_Error (fmt "Magic string is wrong %s" magic));
+      let* _version = In_channel.really_input_string inch 4 in
       let* db_section = skip_to inch (Char.of_int_exn 0xFE) in
       if Char.to_int db_section <> 0xFE then raise Debug;
-      let* db_index = read_length inch in
-      (* if db_index <> 0 then raise Debug; *)
+      let* _db_index = read_length inch in
       let* hash_table_section = skip_to inch (Char.of_int_exn 0xFB) in
-      if Char.to_int hash_table_section <> 0xFB then raise Debug;
+      if Char.to_int hash_table_section <> 0xFB then
+        raise (RDB_Error "Expected hash table section");
       let* hash_table_length = read_length inch in
       let* _expiry_table_length = read_length inch in
       let hash_table =
@@ -70,4 +61,4 @@ let read (rdb_path : string) : t option =
                let value = Option.value_exn (read_string inch) in
                (key, value))
       in
-      Some { magic; version; db_index; hash_table })
+      Some { hash_table })
