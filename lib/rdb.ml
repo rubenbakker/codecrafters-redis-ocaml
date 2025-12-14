@@ -44,7 +44,7 @@ let rec read_int64 (inch : In_channel.t) (length : int) (acc : int64) :
         let open Int64 in
         let acc' = acc lsl 8 in
         let acc' = acc' lor v in
-        echo "read_int64 %d\n" length;
+        echo "read_int64 %d %Lx %Ld %Lx\n" length v acc' acc';
         read_int64 inch Int.(length - 1) acc'
     | None -> None
 
@@ -94,8 +94,8 @@ let read_hash_table_entry (inch : In_channel.t) :
           let* _type_char = In_channel.input_char inch in
           let* key, value = read_key_value inch in
           Some (key, (value, lifetime))
-      | ch ->
-          echo "reading other %x\n" ch;
+      | type_char ->
+          echo "reading type_char %x\n" type_char;
           Option.map (read_key_value inch) ~f:(fun (key, value) ->
               (key, (value, Lifetime.Forever))))
   | None ->

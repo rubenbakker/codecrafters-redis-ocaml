@@ -90,6 +90,7 @@ let set ~(expiry : (string * string) option) (key : string) (value : string) :
     match expiry with
     | Some (expiry_type, expiry_value) ->
         Lifetime.create_expiry expiry_type expiry_value
+        |> Lifetime.to_abolute_expires
     | None -> Lifetime.Forever
   in
   match Int.of_string_opt value with

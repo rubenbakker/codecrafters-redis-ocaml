@@ -68,7 +68,7 @@ let wait_result (outcome : wait_result) =
           | None -> Resp.NullArray)
 
 let set_no_lock (key : string) (value : t) (expires : Lifetime.t) : unit =
-  repo := StringMap.add key (value, Lifetime.to_abolute_expires expires) !repo
+  repo := StringMap.add key (value, expires) !repo
 
 let notify_listeners (listener_queue : listener Queue.t)
     (resp_items : Resp.t list) : unit =
@@ -145,7 +145,7 @@ let mutate (key : string) (lifetime : Lifetime.t)
       let result = get_no_lock key |> from_store |> fn queue_length in
       (match to_store result.store with
       | Some store_data -> (
-          set_no_lock key store_data lifetime;
+          set_no_lock key store_data (Lifetime.to_abolute_expires lifetime);
           match listener_queue with
           | Some lq -> notify_listeners lq result.notify_with
           | None -> ())
