@@ -44,7 +44,6 @@ let rec read_int64 (inch : In_channel.t) (length : int) (acc : int64) :
         let open Int64 in
         (* Little endian: Most significant byte is last *)
         let acc' = acc lor (v lsl Int.(abs (length - 8) * 8)) in
-        echo "read_int64 %d %Lx %Ld %Lx\n" length v acc' acc';
         read_int64 inch Int.(length - 1) acc'
     | None -> None
 
@@ -77,7 +76,6 @@ let read_hash_table_entry (inch : In_channel.t) :
   | Some ch -> (
       match Char.to_int ch with
       | 0xFD ->
-          echo "reading seconds\n";
           let* lifetime =
             read_int64 inch 4 0L
             |> Option.map ~f:(fun ms -> Lifetime.create_expiry_with_ms ms)
@@ -86,7 +84,6 @@ let read_hash_table_entry (inch : In_channel.t) :
           let* key, value = read_key_value inch in
           Some (key, (value, lifetime))
       | 0xFC ->
-          echo "reading millis\n";
           let* lifetime =
             read_int64 inch 8 0L
             |> Option.map ~f:(fun ms -> Lifetime.create_expiry_with_ms ms)
@@ -94,8 +91,7 @@ let read_hash_table_entry (inch : In_channel.t) :
           let* _type_char = In_channel.input_char inch in
           let* key, value = read_key_value inch in
           Some (key, (value, lifetime))
-      | type_char ->
-          echo "reading type_char %x\n" type_char;
+      | _type_char ->
           Option.map (read_key_value inch) ~f:(fun (key, value) ->
               (key, (value, Lifetime.Forever))))
   | None ->
@@ -115,12 +111,10 @@ let read (rdb_path : string) : t option =
       if Char.to_int hash_table_section <> 0xFB then
         raise (RDB_Error "Expected hash table section");
       let* hash_table_length = read_length inch in
-      let* expiry_table_length = read_length inch in
-      echo "hash_table_length: %d %d\n" hash_table_length expiry_table_length;
+      let* _expiry_table_length = read_length inch in
       let hash_table =
         List.range 0 hash_table_length
-        |> List.map ~f:(fun i ->
-            echo "reading entry %d \n" i;
+        |> List.map ~f:(fun _ ->
             let entry = read_hash_table_entry inch |> Option.value_exn in
             entry)
       in

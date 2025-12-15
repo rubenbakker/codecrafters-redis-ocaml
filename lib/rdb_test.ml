@@ -19,4 +19,8 @@ let%expect_test "read rdb header" =
           Stdlib.Printf.printf "%s -> %s (%s)\n" key value expiry);
       Stdlib.flush Stdlib.stdout
   | None -> Stdlib.Printf.printf "None");
-  [%expect {| Hashtable: xxx -> roggwil (Forever) |}]
+  [%expect {|
+    Hashtable:
+    xxx -> roggwil (Forever)
+    lu -> sursee (Expires 1765733046911)
+    |}]

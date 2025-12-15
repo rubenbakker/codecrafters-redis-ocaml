@@ -26,6 +26,6 @@ let has_expired (current_time : int64) (lifetime : t) : bool =
 let create_expiry_with_ms (millis : int64) : t = Expires millis
 
 let create_expiry_with_s (seconds : float) : t =
-  create_expiry_with_ms Int64.(of_float seconds * 1000L)
+  create_expiry_with_ms (Int64.of_float Float.(seconds * 1000.0))
 
 let to_sexp (value : t) : Sexp.t = sexp_of_t value
