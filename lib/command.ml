@@ -371,7 +371,7 @@ let process_subscription_command (context : context_t) (command : command_t) :
              "ERR Can't execute '%s': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / \
               PING / QUIT / RESET are allowed in this context"
              cmd),
-        { context with channels = [] } )
+        context )
 
 let process (context : context_t) (command : command_t) : Resp.t * context_t =
   match context.command_queue with
