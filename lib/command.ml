@@ -239,6 +239,12 @@ let keys (pattern : string) : Resp.t =
   Store.keys pattern |> List.map ~f:(fun k -> Resp.BulkString k) |> fun l ->
   Resp.RespList l
 
+let subscribe (channel_name : string) : Resp.t =
+  Resp.RespList
+    [
+      Resp.BulkString "subscribe"; Resp.BulkString channel_name; Resp.Integer 1;
+    ]
+
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
   (result, context)
@@ -290,6 +296,8 @@ let process_command (context : context_t) (command : command_t) :
   | "wait", [ num_replicas; timeout_ms ] ->
       readonly_command context @@ wait num_replicas timeout_ms
   | "config", [ "GET"; name ] -> readonly_command context @@ config_get name
+  | "subscribe", [ channel_name ] ->
+      readonly_command context @@ subscribe channel_name
   | "keys", [ pattern ] -> readonly_command context @@ keys pattern
   | _ -> (Resp.Null, context)
 
