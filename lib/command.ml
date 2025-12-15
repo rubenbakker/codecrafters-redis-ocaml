@@ -11,10 +11,13 @@ type post_process_t =
 
 exception InvalidData
 
+module StringSet = Stdlib.Set.Make (String)
+
 type context_t = {
   role : Options.role_t;
   command_queue : command_queue_t option;
   post_process : post_process_t;
+  channels : string list;
   slave : Master.slave_t option;
 }
 
@@ -239,11 +242,22 @@ let keys (pattern : string) : Resp.t =
   Store.keys pattern |> List.map ~f:(fun k -> Resp.BulkString k) |> fun l ->
   Resp.RespList l
 
-let subscribe (channel_name : string) : Resp.t =
-  Resp.RespList
-    [
-      Resp.BulkString "subscribe"; Resp.BulkString channel_name; Resp.Integer 1;
-    ]
+let subscribe (context : context_t) (channel_name : string) : Resp.t * context_t
+    =
+  let channels =
+    StringSet.of_list context.channels
+    |> StringSet.add channel_name |> StringSet.elements
+  in
+  let new_context = { context with channels } in
+  let result =
+    Resp.RespList
+      [
+        Resp.BulkString "subscribe";
+        Resp.BulkString channel_name;
+        Resp.Integer (List.length channels);
+      ]
+  in
+  (result, new_context)
 
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
@@ -296,8 +310,7 @@ let process_command (context : context_t) (command : command_t) :
   | "wait", [ num_replicas; timeout_ms ] ->
       readonly_command context @@ wait num_replicas timeout_ms
   | "config", [ "GET"; name ] -> readonly_command context @@ config_get name
-  | "subscribe", [ channel_name ] ->
-      readonly_command context @@ subscribe channel_name
+  | "subscribe", [ channel_name ] -> subscribe context channel_name
   | "keys", [ pattern ] -> readonly_command context @@ keys pattern
   | _ -> (Resp.Null, context)
 
