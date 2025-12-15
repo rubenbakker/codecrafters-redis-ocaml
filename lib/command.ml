@@ -83,6 +83,7 @@ let resp_from_store (item : Store.t) : Resp.t =
   | Store.StorageString str -> Strings.to_resp str
   | Store.StorageList l -> Lists.to_resp l
   | Store.StorageStream _ -> Resp.SimpleString "OK"
+  | Store.StorageSortedSet _ -> Resp.SimpleString "OK"
 
 let get (key : string) : Resp.t =
   let value = Store.get key in
@@ -148,7 +149,8 @@ let type_cmd (key : string) : Resp.t =
       | Store.StorageInt _ -> "integer"
       | Store.StorageList _ -> "list"
       | Store.StorageString _ -> "string"
-      | Store.StorageStream _ -> "stream"))
+      | Store.StorageStream _ -> "stream"
+      | Store.StorageSortedSet _ -> "sortedset"))
   |> fun v -> Resp.SimpleString v
 
 let echo (message : string) : Resp.t = Resp.BulkString message
@@ -276,6 +278,11 @@ let unsubscribe (context : context_t) (channel_name : string) :
   in
   (result, context)
 
+let zadd (_key : string) (_score : string) (_value : string) : Resp.t =
+  Resp.Integer 1
+(* Store.mutate key Lifetime.Forever store_to_stream stream_to_store *)
+(*   (Streams.xadd id rest) *)
+
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
   (result, context)
@@ -331,6 +338,8 @@ let process_command (context : context_t) (command : command_t) :
   | "publish", [ channel_name; value ] ->
       readonly_command context @@ publish channel_name value
   | "keys", [ pattern ] -> readonly_command context @@ keys pattern
+  | "zadd", [ key; score; value ] ->
+      readwrite_command context command @@ zadd key score value
   | _ -> (Resp.Null, context)
 
 let exec (context : context_t) : Resp.t * context_t =

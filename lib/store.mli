@@ -3,6 +3,7 @@ type t =
   | StorageString of Strings.t
   | StorageList of Lists.t
   | StorageStream of Streams.t
+  | StorageSortedSet of Sortedsets.t
 
 val get : string -> t option
 val set : string -> t -> Lifetime.t -> unit

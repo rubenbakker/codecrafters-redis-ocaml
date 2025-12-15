@@ -7,6 +7,7 @@ type t =
   | StorageString of Strings.t
   | StorageList of Lists.t
   | StorageStream of Streams.t
+  | StorageSortedSet of Sortedsets.t
 
 (** storage data stored as repo *)
 let repo : (t * Lifetime.t) StringMap.t ref = ref StringMap.empty
@@ -74,11 +75,11 @@ let notify_listeners (listener_queue : listener Queue.t)
     (resp_items : Resp.t list) : unit =
   resp_items
   |> List.iter ~f:(fun value ->
-      match Queue.dequeue listener_queue with
-      | None -> ()
-      | Some listener ->
-          listener.result <- Some value;
-          Stdlib.Condition.signal listener.condition)
+         match Queue.dequeue listener_queue with
+         | None -> ()
+         | Some listener ->
+             listener.result <- Some value;
+             Stdlib.Condition.signal listener.condition)
 
 let get_no_lock (key : string) : t option =
   match StringMap.find_opt key !repo with
@@ -178,7 +179,7 @@ let rec expire_listeners () : unit =
             Queue.filter queue ~f:(fun listener ->
                 Lifetime.has_expired current_time listener.lifetime)
             |> Queue.iter ~f:(fun listener ->
-                Stdlib.Condition.signal listener.condition);
+                   Stdlib.Condition.signal listener.condition);
             let new_queue =
               Queue.filter queue ~f:(fun listener ->
                   not (Lifetime.has_expired current_time listener.lifetime))
