@@ -42,8 +42,7 @@ let rec read_int64 (inch : In_channel.t) (length : int) (acc : int64) :
     | Some ch ->
         let v = Char.to_int ch |> Int64.of_int in
         let open Int64 in
-        let acc' = acc lsl 8 in
-        let acc' = acc' lor v in
+        let acc' = acc lor (v lsl Int.(abs (length - 8) * 8)) in
         echo "read_int64 %d %Lx %Ld %Lx\n" length v acc' acc';
         read_int64 inch Int.(length - 1) acc'
     | None -> None
@@ -120,9 +119,9 @@ let read (rdb_path : string) : t option =
       let hash_table =
         List.range 0 hash_table_length
         |> List.map ~f:(fun i ->
-               echo "reading entry %d \n" i;
-               let entry = read_hash_table_entry inch |> Option.value_exn in
-               entry)
+            echo "reading entry %d \n" i;
+            let entry = read_hash_table_entry inch |> Option.value_exn in
+            entry)
       in
       Stdlib.flush Stdio.stdout;
       Some { hash_table })
