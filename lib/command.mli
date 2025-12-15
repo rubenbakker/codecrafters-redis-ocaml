@@ -9,11 +9,12 @@ type post_process_t =
   | Propagate of Resp.t
   | Noop
 
+
 type context_t = {
   role : Options.role_t;
   command_queue : command_queue_t option;
   post_process : post_process_t;
-  channels : string list;
+  subscription_mode : bool;
   slave : Master.slave_t option;
 }
 

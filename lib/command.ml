@@ -17,7 +17,7 @@ type context_t = {
   role : Options.role_t;
   command_queue : command_queue_t option;
   post_process : post_process_t;
-  channels : string list;
+  subscription_mode : bool;
   slave : Master.slave_t option;
 }
 
@@ -141,13 +141,13 @@ let blpop (key : string) (timeout : string) : Resp.t =
 
 let type_cmd (key : string) : Resp.t =
   (match Store.get key with
-    | None -> "none"
-    | Some v -> (
-        match v with
-        | Store.StorageInt _ -> "integer"
-        | Store.StorageList _ -> "list"
-        | Store.StorageString _ -> "string"
-        | Store.StorageStream _ -> "stream"))
+  | None -> "none"
+  | Some v -> (
+      match v with
+      | Store.StorageInt _ -> "integer"
+      | Store.StorageList _ -> "list"
+      | Store.StorageString _ -> "string"
+      | Store.StorageStream _ -> "stream"))
   |> fun v -> Resp.SimpleString v
 
 let echo (message : string) : Resp.t = Resp.BulkString message
@@ -165,7 +165,7 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   let from_ids = List.sub rest ~pos:count ~len:(List.length rest - count) in
   List.zip_exn keys from_ids
   |> List.map ~f:(fun (key, from_id) ->
-      Store.query key store_to_stream (Streams.xread key from_id timeout))
+         Store.query key store_to_stream (Streams.xread key from_id timeout))
   |> fun l ->
   match l with
   | [ Resp.NullArray ] | [] -> Resp.NullArray
@@ -244,11 +244,9 @@ let keys (pattern : string) : Resp.t =
 
 let subscribe (context : context_t) (channel_name : string) : Resp.t * context_t
     =
-  let channels =
-    StringSet.of_list context.channels
-    |> StringSet.add channel_name |> StringSet.elements
-  in
-  let new_context = { context with channels } in
+  let thread_id = Thread.id @@ Thread.self () in
+  Pubsub.subscribe channel_name @@ thread_id;
+  let channels = Pubsub.channels_for_subscriber thread_id in
   let result =
     Resp.RespList
       [
@@ -257,15 +255,18 @@ let subscribe (context : context_t) (channel_name : string) : Resp.t * context_t
         Resp.Integer (List.length channels);
       ]
   in
-  (result, new_context)
+  (result, { context with subscription_mode = true })
+
+let publish (channel_name : string) (_value : string) : Resp.t =
+  match Pubsub.find_channel channel_name with
+  | Some channel -> Resp.Integer (List.length channel.subscribers)
+  | None -> Resp.Integer 0
 
 let unsubscribe (context : context_t) (channel_name : string) :
     Resp.t * context_t =
-  let channels =
-    StringSet.of_list context.channels
-    |> StringSet.add channel_name |> StringSet.elements
-  in
-  let new_context = { context with channels } in
+  let thread_id = Thread.id @@ Thread.self () in
+  Pubsub.subscribe channel_name @@ thread_id;
+  let channels = Pubsub.channels_for_subscriber thread_id in
   let result =
     Resp.RespList
       [
@@ -274,7 +275,7 @@ let unsubscribe (context : context_t) (channel_name : string) :
         Resp.Integer (List.length channels);
       ]
   in
-  (result, new_context)
+  (result, context)
 
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
@@ -328,6 +329,8 @@ let process_command (context : context_t) (command : command_t) :
       readonly_command context @@ wait num_replicas timeout_ms
   | "config", [ "GET"; name ] -> readonly_command context @@ config_get name
   | "subscribe", [ channel_name ] -> subscribe context channel_name
+  | "publish", [ channel_name; value ] ->
+      readonly_command context @@ publish channel_name value
   | "keys", [ pattern ] -> readonly_command context @@ keys pattern
   | _ -> (Resp.Null, context)
 
@@ -339,8 +342,8 @@ let exec (context : context_t) : Resp.t * context_t =
   | Some queue ->
       Queue.to_list queue
       |> List.map ~f:(fun command ->
-          let result, _ = process_command context command in
-          result)
+             let result, _ = process_command context command in
+             result)
       |> fun list_of_resp ->
       (Resp.RespList list_of_resp, { context with command_queue = None })
 
@@ -378,7 +381,7 @@ let process (context : context_t) (command : command_t) : Resp.t * context_t =
   match context.command_queue with
   | Some queue -> process_transaction_command context queue command
   | None ->
-      if List.is_empty context.channels then
+      if not context.subscription_mode then
         match command with
         | "multi", [] -> multi context
         | _ -> process_command context command

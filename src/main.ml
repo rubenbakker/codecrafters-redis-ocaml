@@ -8,7 +8,7 @@ let empty_context () : Command.context_t =
     role = options.role;
     command_queue = None;
     post_process = Noop;
-    channels = [];
+    subscription_mode = false;
     slave = None;
   }
 
