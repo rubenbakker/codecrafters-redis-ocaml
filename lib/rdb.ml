@@ -42,6 +42,7 @@ let rec read_int64 (inch : In_channel.t) (length : int) (acc : int64) :
     | Some ch ->
         let v = Char.to_int ch |> Int64.of_int in
         let open Int64 in
+        (* Little endian: Most significant byte is last *)
         let acc' = acc lor (v lsl Int.(abs (length - 8) * 8)) in
         echo "read_int64 %d %Lx %Ld %Lx\n" length v acc' acc';
         read_int64 inch Int.(length - 1) acc'
