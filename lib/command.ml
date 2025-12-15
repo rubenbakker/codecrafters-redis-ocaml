@@ -259,6 +259,23 @@ let subscribe (context : context_t) (channel_name : string) : Resp.t * context_t
   in
   (result, new_context)
 
+let unsubscribe (context : context_t) (channel_name : string) :
+    Resp.t * context_t =
+  let channels =
+    StringSet.of_list context.channels
+    |> StringSet.add channel_name |> StringSet.elements
+  in
+  let new_context = { context with channels } in
+  let result =
+    Resp.RespList
+      [
+        Resp.BulkString "subscribe";
+        Resp.BulkString channel_name;
+        Resp.Integer (List.length channels);
+      ]
+  in
+  (result, new_context)
+
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
   (result, context)
@@ -339,10 +356,29 @@ let process_transaction_command (context : context_t)
       Queue.enqueue queue command;
       (Resp.SimpleString "QUEUED", context)
 
+let process_subscription_command (context : context_t) (command : command_t) :
+    Resp.t * context_t =
+  match command with
+  | "subscribe", [ channel_name ] -> subscribe context channel_name
+  | "unsubscribe", [ channel_name ] -> unsubscribe context channel_name
+  | "psubscribe", [ channel_name ] -> subscribe context channel_name
+  | "punsubscribe", [ channel_name ] -> unsubscribe context channel_name
+  | "ping", _ -> subscribe context "ping"
+  | "quit", _ -> subscribe context "quit"
+  | cmd, _ ->
+      ( Resp.RespError
+          (Stdlib.Printf.sprintf
+             "ERR Can't execute '%s': only (P|S)SUBSCRIBE / (P|S)UNSUBSCRIBE / \
+              PING / QUIT / RESET are allowed in this context"
+             cmd),
+        { context with channels = [] } )
+
 let process (context : context_t) (command : command_t) : Resp.t * context_t =
   match context.command_queue with
   | Some queue -> process_transaction_command context queue command
-  | None -> (
-      match command with
-      | "multi", [] -> multi context
-      | _ -> process_command context command)
+  | None ->
+      if List.is_empty context.channels then
+        match command with
+        | "multi", [] -> multi context
+        | _ -> process_command context command
+      else process_subscription_command context command
