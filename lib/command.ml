@@ -264,12 +264,12 @@ let publish (channel_name : string) (message : string) : Resp.t =
 let unsubscribe (context : context_t) (channel_name : string) :
     Resp.t * context_t =
   let thread_id = Thread.id @@ Thread.self () in
-  Pubsub.subscribe channel_name thread_id context.socket;
+  Pubsub.unsubscribe channel_name thread_id;
   let channels = Pubsub.channels_for_subscriber thread_id in
   let result =
     Resp.RespList
       [
-        Resp.BulkString "subscribe";
+        Resp.BulkString "unsubscribe";
         Resp.BulkString channel_name;
         Resp.Integer (List.length channels);
       ]

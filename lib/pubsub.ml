@@ -31,6 +31,16 @@ let subscribe (channel_name : string) (thread_id : int)
             { name = channel_name; subscribers = [ { thread_id; socket } ] }
             :: !channels)
 
+let unsubscribe (channel_name : string) (thread_id : int) : unit =
+  protect (fun _ ->
+      match find_channel channel_name with
+      | Some channel ->
+          channel.subscribers <-
+            List.filter
+              ~f:(fun s -> s.thread_id <> thread_id)
+              channel.subscribers
+      | None -> ())
+
 let publish (channel_name : string) (message : string) : int =
   protect (fun _ ->
       let message_bytes =
