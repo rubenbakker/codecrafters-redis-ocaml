@@ -15,6 +15,7 @@ module StringSet = Stdlib.Set.Make (String)
 
 type context_t = {
   role : Options.role_t;
+  socket : Unix.file_descr;
   command_queue : command_queue_t option;
   post_process : post_process_t;
   subscription_mode : bool;
@@ -245,7 +246,7 @@ let keys (pattern : string) : Resp.t =
 let subscribe (context : context_t) (channel_name : string) : Resp.t * context_t
     =
   let thread_id = Thread.id @@ Thread.self () in
-  Pubsub.subscribe channel_name @@ thread_id;
+  Pubsub.subscribe channel_name thread_id context.socket;
   let channels = Pubsub.channels_for_subscriber thread_id in
   let result =
     Resp.RespList
@@ -257,15 +258,13 @@ let subscribe (context : context_t) (channel_name : string) : Resp.t * context_t
   in
   (result, { context with subscription_mode = true })
 
-let publish (channel_name : string) (_value : string) : Resp.t =
-  match Pubsub.find_channel channel_name with
-  | Some channel -> Resp.Integer (List.length channel.subscribers)
-  | None -> Resp.Integer 0
+let publish (channel_name : string) (message : string) : Resp.t =
+  Resp.Integer (Pubsub.publish channel_name message)
 
 let unsubscribe (context : context_t) (channel_name : string) :
     Resp.t * context_t =
   let thread_id = Thread.id @@ Thread.self () in
-  Pubsub.subscribe channel_name @@ thread_id;
+  Pubsub.subscribe channel_name thread_id context.socket;
   let channels = Pubsub.channels_for_subscriber thread_id in
   let result =
     Resp.RespList

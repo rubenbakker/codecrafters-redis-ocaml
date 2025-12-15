@@ -2,10 +2,11 @@ open Base
 open Unix
 open Lib
 
-let empty_context () : Command.context_t =
+let empty_context (socket : file_descr) : Command.context_t =
   let options = Options.parse_options (Sys.get_argv ()) in
   {
     role = options.role;
+    socket;
     command_queue = None;
     post_process = Noop;
     subscription_mode = false;
@@ -91,7 +92,7 @@ let rec process_slave channels (context : Command.context_t)
 
 let run_and_close_client client_socket =
   let finally () = close client_socket in
-  let work () = process_client client_socket (empty_context ()) in
+  let work () = process_client client_socket (empty_context client_socket) in
   Stdlib.Fun.protect ~finally work
 
 let rec accept_loop server_socket threads =
@@ -123,7 +124,7 @@ let init_slave (host : string) (port : int) (slave_port : int) =
   (* rdb file *)
   ignore @@ Resp.read_binary_from_channel in_channel;
   ignore
-    (Thread.create (fun () -> process_slave channels (empty_context ()) 0) ())
+    (Thread.create (fun () -> process_slave channels (empty_context sock) 0) ())
 
 let load_rdb (rdb : Options.rdb_t) : unit =
   let path = Stdlib.Filename.concat rdb.dir rdb.filename in

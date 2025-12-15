@@ -12,6 +12,7 @@ type post_process_t =
 
 type context_t = {
   role : Options.role_t;
+  socket : Unix.file_descr;
   command_queue : command_queue_t option;
   post_process : post_process_t;
   subscription_mode : bool;
