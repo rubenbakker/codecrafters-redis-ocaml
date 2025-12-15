@@ -363,7 +363,8 @@ let process_subscription_command (context : context_t) (command : command_t) :
   | "unsubscribe", [ channel_name ] -> unsubscribe context channel_name
   | "psubscribe", [ channel_name ] -> subscribe context channel_name
   | "punsubscribe", [ channel_name ] -> unsubscribe context channel_name
-  | "ping", _ -> subscribe context "ping"
+  | "ping", _ ->
+      (Resp.RespList [ Resp.BulkString "pong"; Resp.BulkString "" ], context)
   | "quit", _ -> subscribe context "quit"
   | cmd, _ ->
       ( Resp.RespError
