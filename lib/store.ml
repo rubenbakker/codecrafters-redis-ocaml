@@ -43,7 +43,7 @@ type wait_result =
 let queue_listener (key : string) (timeout : Lifetime.t) : listener =
   let condition = Stdlib.Condition.create () in
   let lock = Stdlib.Mutex.create () in
-  let lifetime = Lifetime.to_abolute_expires timeout in
+  let lifetime = Lifetime.to_absolute_expires timeout in
   let listener = { lock; condition; lifetime; result = None } in
   Stdlib.Mutex.lock lock;
   let queue =
@@ -74,11 +74,11 @@ let notify_listeners (listener_queue : listener Queue.t)
     (resp_items : Resp.t list) : unit =
   resp_items
   |> List.iter ~f:(fun value ->
-         match Queue.dequeue listener_queue with
-         | None -> ()
-         | Some listener ->
-             listener.result <- Some value;
-             Stdlib.Condition.signal listener.condition)
+      match Queue.dequeue listener_queue with
+      | None -> ()
+      | Some listener ->
+          listener.result <- Some value;
+          Stdlib.Condition.signal listener.condition)
 
 let get_no_lock (key : string) : t option =
   match StringMap.find_opt key !repo with
@@ -145,7 +145,7 @@ let mutate (key : string) (lifetime : Lifetime.t)
       let result = get_no_lock key |> from_store |> fn queue_length in
       (match to_store result.store with
       | Some store_data -> (
-          set_no_lock key store_data (Lifetime.to_abolute_expires lifetime);
+          set_no_lock key store_data (Lifetime.to_absolute_expires lifetime);
           match listener_queue with
           | Some lq -> notify_listeners lq result.notify_with
           | None -> ())
@@ -178,7 +178,7 @@ let rec expire_listeners () : unit =
             Queue.filter queue ~f:(fun listener ->
                 Lifetime.has_expired current_time listener.lifetime)
             |> Queue.iter ~f:(fun listener ->
-                   Stdlib.Condition.signal listener.condition);
+                Stdlib.Condition.signal listener.condition);
             let new_queue =
               Queue.filter queue ~f:(fun listener ->
                   not (Lifetime.has_expired current_time listener.lifetime))

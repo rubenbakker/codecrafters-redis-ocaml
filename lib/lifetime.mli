@@ -2,7 +2,7 @@ open Base
 
 type t = Forever | Expires of int64
 
-val to_abolute_expires : t -> t
+val to_absolute_expires : t -> t
 val now : unit -> int64
 val create_expiry : string -> string -> t
 val create_expiry_with_s : float -> t

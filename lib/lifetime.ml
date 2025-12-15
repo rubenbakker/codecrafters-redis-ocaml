@@ -4,7 +4,7 @@ type t = Forever | Expires of int64 [@@deriving compare, equal, sexp]
 
 let now () : int64 = Unix.gettimeofday () *. 1000.0 |> Int64.of_float
 
-let to_abolute_expires (expires : t) : t =
+let to_absolute_expires (expires : t) : t =
   match expires with
   | Forever -> Forever
   | Expires ms -> Expires Int64.(now () + ms)
