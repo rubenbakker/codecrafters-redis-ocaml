@@ -288,6 +288,9 @@ let zadd (key : string) (score : string) (value : string) : Resp.t =
   Store.mutate key Lifetime.Forever store_to_sortedset sortedset_to_store
   @@ Sortedsets.zadd ~value ~score:(Float.of_string score)
 
+let zrank (key : string) (value : string) : Resp.t =
+  Store.query key store_to_sortedset @@ Sortedsets.zrank ~value
+
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
   (result, context)
@@ -345,6 +348,7 @@ let process_command (context : context_t) (command : command_t) :
   | "keys", [ pattern ] -> readonly_command context @@ keys pattern
   | "zadd", [ key; score; value ] ->
       readwrite_command context command @@ zadd key score value
+  | "zrank", [ key; value ] -> readonly_command context @@ zrank key value
   | _ -> (Resp.Null, context)
 
 let exec (context : context_t) : Resp.t * context_t =

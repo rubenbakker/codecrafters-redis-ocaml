@@ -14,7 +14,10 @@ let remove ~(value : string) (set : t) = Map.remove set value
 let sorted_entries (set : t) : entry_t list =
   Map.to_alist set
   |> List.map ~f:(fun (value, score) -> { value; score })
-  |> List.sort ~compare:(fun left right -> Float.compare left.score right.score)
+  |> List.sort ~compare:(fun left right ->
+      match Float.compare left.score right.score with
+      | 0 -> String.compare left.value right.value
+      | result -> result)
 
 let zadd ~(value : string) ~(score : float) (_listener_count : int)
     (set : t option) : t Storeop.mutation_result =
@@ -26,3 +29,13 @@ let zadd ~(value : string) ~(score : float) (_listener_count : int)
     return = Resp.Integer (Map.length result_set - previous_size);
     notify_with = [];
   }
+
+let zrank ~(value : string) (set : t option) : Storeop.query_result =
+  let set = match set with Some set -> set | None -> empty () in
+  match
+    sorted_entries set
+    |> List.map ~f:(fun entry -> (entry.value, entry.score))
+    |> List.findi ~f:(fun _ (v, _) -> String.(value = v))
+  with
+  | Some (idx, _) -> Storeop.Value (Resp.Integer idx)
+  | _ -> Storeop.Value Resp.Null
