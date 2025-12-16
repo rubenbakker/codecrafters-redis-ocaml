@@ -63,6 +63,12 @@ let store_to_int (storage_value : Store.t option) : Ints.t option =
 let store_to_string (storage_value : Store.t option) : Strings.t option =
   match storage_value with Some (StorageString str) -> Some str | _ -> None
 
+let store_to_sortedset (storage_value : Store.t option) : Sortedsets.t option =
+  match storage_value with Some (StorageSortedSet set) -> Some set | _ -> None
+
+let sortedset_to_store (set : Sortedsets.t option) : Store.t option =
+  match set with Some set -> Some (Store.StorageSortedSet set) | _ -> None
+
 let stream_to_store (stream : Streams.t option) : Store.t option =
   match stream with
   | Some stream -> Some (Store.StorageStream stream)
@@ -143,14 +149,14 @@ let blpop (key : string) (timeout : string) : Resp.t =
 
 let type_cmd (key : string) : Resp.t =
   (match Store.get key with
-  | None -> "none"
-  | Some v -> (
-      match v with
-      | Store.StorageInt _ -> "integer"
-      | Store.StorageList _ -> "list"
-      | Store.StorageString _ -> "string"
-      | Store.StorageStream _ -> "stream"
-      | Store.StorageSortedSet _ -> "sortedset"))
+    | None -> "none"
+    | Some v -> (
+        match v with
+        | Store.StorageInt _ -> "integer"
+        | Store.StorageList _ -> "list"
+        | Store.StorageString _ -> "string"
+        | Store.StorageStream _ -> "stream"
+        | Store.StorageSortedSet _ -> "sortedset"))
   |> fun v -> Resp.SimpleString v
 
 let echo (message : string) : Resp.t = Resp.BulkString message
@@ -168,7 +174,7 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   let from_ids = List.sub rest ~pos:count ~len:(List.length rest - count) in
   List.zip_exn keys from_ids
   |> List.map ~f:(fun (key, from_id) ->
-         Store.query key store_to_stream (Streams.xread key from_id timeout))
+      Store.query key store_to_stream (Streams.xread key from_id timeout))
   |> fun l ->
   match l with
   | [ Resp.NullArray ] | [] -> Resp.NullArray
@@ -278,10 +284,9 @@ let unsubscribe (context : context_t) (channel_name : string) :
   in
   (result, context)
 
-let zadd (_key : string) (_score : string) (_value : string) : Resp.t =
-  Resp.Integer 1
-(* Store.mutate key Lifetime.Forever store_to_stream stream_to_store *)
-(*   (Streams.xadd id rest) *)
+let zadd (key : string) (score : string) (value : string) : Resp.t =
+  Store.mutate key Lifetime.Forever store_to_sortedset sortedset_to_store
+  @@ Sortedsets.zadd ~value ~score:(Float.of_string score)
 
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
@@ -350,8 +355,8 @@ let exec (context : context_t) : Resp.t * context_t =
   | Some queue ->
       Queue.to_list queue
       |> List.map ~f:(fun command ->
-             let result, _ = process_command context command in
-             result)
+          let result, _ = process_command context command in
+          result)
       |> fun list_of_resp ->
       (Resp.RespList list_of_resp, { context with command_queue = None })
 
