@@ -291,6 +291,11 @@ let zadd (key : string) (score : string) (value : string) : Resp.t =
 let zrank (key : string) (value : string) : Resp.t =
   Store.query key store_to_sortedset @@ Sortedsets.zrank ~value
 
+let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
+  Store.query key store_to_sortedset
+  @@ Sortedsets.zrange ~from_idx:(Int.of_string from_index)
+       ~to_idx:(Int.of_string to_index)
+
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
   (result, context)
@@ -349,6 +354,8 @@ let process_command (context : context_t) (command : command_t) :
   | "zadd", [ key; score; value ] ->
       readwrite_command context command @@ zadd key score value
   | "zrank", [ key; value ] -> readonly_command context @@ zrank key value
+  | "zrange", [ key; from_index; to_index ] ->
+      readonly_command context @@ zrange key from_index to_index
   | _ -> (Resp.Null, context)
 
 let exec (context : context_t) : Resp.t * context_t =
