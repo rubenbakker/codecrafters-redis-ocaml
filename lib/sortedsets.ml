@@ -19,9 +19,10 @@ let sorted_entries (set : t) : entry_t list =
 let zadd ~(value : string) ~(score : float) (_listener_count : int)
     (set : t option) : t Storeop.mutation_result =
   let set = match set with Some set -> set | None -> empty () in
+  let previous_size = Map.length set in
   let result_set = add ~value ~score set in
   {
     store = Some result_set;
-    return = Resp.Integer (Map.length result_set);
+    return = Resp.Integer (Map.length result_set - previous_size);
     notify_with = [];
   }
