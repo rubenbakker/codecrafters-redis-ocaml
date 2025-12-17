@@ -43,11 +43,14 @@ let zrank ~(value : string) (set : t option) : Storeop.query_result =
 let zrange ~(from_idx : int) ~(to_idx : int) (set : t option) :
     Storeop.query_result =
   let set = match set with Some set -> set | None -> empty () in
-  let to_idx = min to_idx (Map.length set) in
   let result =
-    sorted_entries set
-    |> List.filteri ~f:(fun idx _ -> idx >= from_idx && idx <= to_idx)
-    |> List.map ~f:(fun entry -> entry.value)
+    match Range.normalize (Map.length set) from_idx to_idx with
+    | Some (pos, len) ->
+        let result =
+          sorted_entries set |> List.sub ~pos ~len
+          |> List.map ~f:(fun entry -> entry.value)
+        in
+        Resp.RespList (List.map ~f:(fun value -> Resp.BulkString value) result)
+    | None -> Resp.RespList []
   in
-  Storeop.Value
-    (Resp.RespList (List.map ~f:(fun value -> Resp.BulkString value) result))
+  Storeop.Value result
