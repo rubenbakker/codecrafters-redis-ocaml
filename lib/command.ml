@@ -301,6 +301,10 @@ let zrem (key : string) (member : string) : Resp.t =
   Store.mutate key Lifetime.Forever store_to_sortedset sortedset_to_store
   @@ Sortedsets.zrem member
 
+let geoadd (_key : string) (_longitude : string) (_latitude : string)
+    (_member : string) : Resp.t =
+  Resp.Integer 1
+
 let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
   Store.query key store_to_sortedset
   @@ Sortedsets.zrange ~from_idx:(Int.of_string from_index)
@@ -370,6 +374,8 @@ let process_command (context : context_t) (command : command_t) :
   | "zscore", [ key; member ] -> readonly_command context @@ zscore key member
   | "zrem", [ key; member ] ->
       readwrite_command context command @@ zrem key member
+  | "geoadd", [ key; longitude; latitude; member ] ->
+      readonly_command context @@ geoadd key longitude latitude member
   | _ -> (Resp.Null, context)
 
 let exec (context : context_t) : Resp.t * context_t =
