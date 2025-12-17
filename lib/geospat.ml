@@ -210,7 +210,7 @@ module Decode = struct
     let latitude = (grid_latitude_min +. grid_latitude_max) /. 2.0 in
     let longitude = (grid_longitude_min +. grid_longitude_max) /. 2.0 in
 
-    { latitude; longitude }
+    { longitude; latitude }
 
   let decode geo_code =
     (* Align bits of both latitude and longitude to take even-numbered position *)

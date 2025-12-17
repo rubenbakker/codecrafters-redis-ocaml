@@ -310,6 +310,39 @@ let geoadd (key : string) (longitude : string) (latitude : string)
            ~score:(Geospat.Encode.encode longitude latitude |> Float.of_int64)
   | Error message -> Resp.RespError message
 
+(*List.map ~f:(fun (member, score) -> match score with (Some score -> match Geospat.Decode.decode score with 
+    | Some (longitude, latitude) -> Resp.RespList [Resp.BulkString (Int.to_string longitude); Resp.BulkString (Int.to_string latitude)]))*)
+
+let convert_scores_to_geopos (scores : float option list) :
+    (float * float) option list =
+  List.map scores ~f:(fun score ->
+      Option.map score ~f:(fun v ->
+          let coords = Geospat.Decode.decode (Int64.of_float v) in
+          (coords.longitude, coords.latitude)))
+
+let convert_geopos_to_resp ((longitude, latitude) : float * float) : Resp.t =
+  Resp.RespList
+    [
+      Resp.BulkString (Float.to_string longitude);
+      Resp.BulkString (Float.to_string latitude);
+    ]
+
+let convert_geopos_list_to_resp (scores : (float * float) option list) : Resp.t
+    =
+  List.map scores ~f:(fun score_opt ->
+      match score_opt with
+      | Some score -> convert_geopos_to_resp score
+      | None -> Resp.NullArray)
+  |> fun result -> Resp.RespList result
+
+let geopos (key : string) (members : string list) : Resp.t =
+  Store.query key store_to_sortedset @@ fun set ->
+  match Sortedsets.zscores members set with
+  | Some scores ->
+      scores |> convert_scores_to_geopos |> convert_geopos_list_to_resp
+      |> fun result -> Storeop.Value result
+  | None -> Storeop.Value Resp.NullArray
+
 let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
   Store.query key store_to_sortedset
   @@ Sortedsets.zrange ~from_idx:(Int.of_string from_index)
@@ -381,6 +414,7 @@ let process_command (context : context_t) (command : command_t) :
       readwrite_command context command @@ zrem key member
   | "geoadd", [ key; longitude; latitude; member ] ->
       readonly_command context @@ geoadd key longitude latitude member
+  | "geopos", key :: members -> readonly_command context @@ geopos key members
   | _ -> (Resp.Null, context)
 
 let exec (context : context_t) : Resp.t * context_t =

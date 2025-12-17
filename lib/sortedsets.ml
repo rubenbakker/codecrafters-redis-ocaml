@@ -55,10 +55,17 @@ let zcard (set : t option) : Storeop.query_result =
   let set = match set with Some set -> set | None -> empty () in
   Storeop.Value (Resp.Integer (Map.length set))
 
-let zscore (key : string) (set : t option) : Storeop.query_result =
+let zscores (members : string list) (set : t option) : float option list option
+    =
+  Option.map set ~f:(fun set -> List.map members ~f:(fun m -> Map.find set m))
+
+let zscore_value (member : string) (set : t option) : float option =
   let set = match set with Some set -> set | None -> empty () in
+  Map.find set member
+
+let zscore (member : string) (set : t option) : Storeop.query_result =
   let result =
-    match Map.find set key with
+    match zscore_value member set with
     | Some score ->
         Resp.BulkString
           ( Float.to_string score |> fun x ->
