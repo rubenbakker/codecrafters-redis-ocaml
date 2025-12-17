@@ -301,32 +301,13 @@ let zrem (key : string) (member : string) : Resp.t =
   Store.mutate key Lifetime.Forever store_to_sortedset sortedset_to_store
   @@ Sortedsets.zrem member
 
-let validate_longitute (longitude : string) : (float, string) Result.t =
-  match Float.of_string_opt longitude with
-  | Some longitude ->
-      if Float.(longitude >= -180.0 && longitude <= 180.0) then Ok longitude
-      else
-        Error (Stdlib.Printf.sprintf "ERR longitude (%f) is invalid" longitude)
-  | None -> Error "ERR invalid longitude value"
-
-let validate_latitude (latitude : string) : (float, string) Result.t =
-  match Float.of_string_opt latitude with
-  | Some latitude ->
-      if Float.(latitude >= -85.05112878 && latitude <= 85.05112878) then
-        Ok latitude
-      else Error (Stdlib.Printf.sprintf "ERR latitude (%f) is invalid" latitude)
-  | None -> Error "ERR invalid latitude value"
-
 let geoadd (key : string) (longitude : string) (latitude : string)
     (member : string) : Resp.t =
-  match validate_longitute longitude with
-  | Ok _longitude -> (
-      match validate_latitude latitude with
-      | Ok _latitude ->
-          Store.mutate key Lifetime.Forever store_to_sortedset
-            sortedset_to_store
-          @@ Sortedsets.zadd ~member ~score:0.0
-      | Error message -> Resp.RespError message)
+  match Geospat.geocode_of_strings longitude latitude with
+  | Ok (longitude, latitude) ->
+      Store.mutate key Lifetime.Forever store_to_sortedset sortedset_to_store
+      @@ Sortedsets.zadd ~member
+           ~score:(Geospat.Encode.encode longitude latitude |> Float.of_int64)
   | Error message -> Resp.RespError message
 
 let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
