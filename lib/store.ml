@@ -36,9 +36,6 @@ module Listeners = Protected.Resource.Make (struct
   let set l = listeners := l
 end)
 
-(** module global storage for all listeners *)
-let listeners : listener Queue.t StringMap.t ref = ref StringMap.empty
-
 type wait_result =
   | WaitResult of listener * (Resp.t -> Resp.t)
   | ValueResult of Resp.t
@@ -49,16 +46,16 @@ let queue_listener (key : string) (timeout : Lifetime.t) : listener =
   let lifetime = Lifetime.to_absolute_expires timeout in
   let listener = { lock; condition; lifetime; result = None } in
   Stdlib.Mutex.lock lock;
-  let queue =
-    match StringMap.find_opt key !listeners with
-    | None ->
-        let q : listener Queue.t = Queue.create () in
-        listeners := StringMap.add key q !listeners;
-        q
-    | Some q -> q
-  in
-  Queue.enqueue queue listener;
-  listener
+  Listeners.mutate_with_result (fun listeners ->
+      let listeners, queue =
+        match StringMap.find_opt key listeners with
+        | None ->
+            let q : listener Queue.t = Queue.create () in
+            (StringMap.add key q listeners, q)
+        | Some q -> (listeners, q)
+      in
+      Queue.enqueue queue listener;
+      (listeners, listener))
 
 let wait_result (outcome : wait_result) =
   match outcome with
@@ -146,7 +143,7 @@ let mutate (key : string) (lifetime : Lifetime.t)
     (from_store : 't option -> 'a option) (to_store : 'a option -> t option)
     (fn : int -> 'a option -> 'a Storeop.mutation_result) : Resp.t =
   Repo.mutate_with_result (fun repo ->
-      let listener_queue = StringMap.find_opt key !listeners in
+      let listener_queue = StringMap.find_opt key (Listeners.get ()) in
       let queue_length =
         match listener_queue with Some q -> Queue.length q | None -> 0
       in
@@ -180,6 +177,7 @@ let rec expire_listeners () : unit =
   ignore
   @@ Listeners.mutate (fun listeners ->
       let current_time = Lifetime.now () in
+      Stdlib.print_int (List.length (StringMap.to_list listeners));
       StringMap.map
         (fun queue ->
           Queue.filter queue ~f:(fun listener ->
