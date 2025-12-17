@@ -12,6 +12,7 @@ module Resource = struct
     val get : unit -> t
     val query : (t -> 'a) -> 'a
     val mutate : (t -> t) -> unit
+    val mutate_with_result : (t -> t * 'a) -> 'a
   end
 
   module Make (R : Unprotected) : Protected with type t := R.t = struct
@@ -28,6 +29,13 @@ module Resource = struct
       Stdlib.Fun.protect ~finally:unlock (fun () ->
           lock ();
           fn (R.get ()) |> R.set)
+
+    let mutate_with_result (fn : R.t -> R.t * 'a) =
+      Stdlib.Fun.protect ~finally:unlock (fun () ->
+          lock ();
+          let state, result = fn (R.get ()) in
+          R.set state;
+          result)
 
     let get = R.get
   end
