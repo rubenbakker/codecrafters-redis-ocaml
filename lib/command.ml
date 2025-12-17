@@ -303,6 +303,7 @@ let zrem (key : string) (member : string) : Resp.t =
 
 let geoadd (key : string) (longitude : string) (latitude : string)
     (member : string) : Resp.t =
+  Geospat.Encode.test ();
   match Geospat.geocode_of_strings longitude latitude with
   | Ok (longitude, latitude) ->
       Store.mutate key Lifetime.Forever store_to_sortedset sortedset_to_store

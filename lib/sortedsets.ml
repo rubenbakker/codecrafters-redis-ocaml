@@ -59,7 +59,12 @@ let zscore (key : string) (set : t option) : Storeop.query_result =
   let set = match set with Some set -> set | None -> empty () in
   let result =
     match Map.find set key with
-    | Some score -> Resp.BulkString (Float.to_string score)
+    | Some score ->
+        Resp.BulkString
+          ( Float.to_string score |> fun x ->
+            match String.chop_suffix x ~suffix:"." with
+            | Some s -> s
+            | None -> x )
     | None -> Resp.Null
   in
   Storeop.Value result
