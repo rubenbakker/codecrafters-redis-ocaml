@@ -317,12 +317,15 @@ let validate_latitude (latitude : string) : (float, string) Result.t =
       else Error (Stdlib.Printf.sprintf "ERR latitude (%f) is invalid" latitude)
   | None -> Error "ERR invalid latitude value"
 
-let geoadd (_key : string) (longitude : string) (latitude : string)
-    (_member : string) : Resp.t =
+let geoadd (key : string) (longitude : string) (latitude : string)
+    (member : string) : Resp.t =
   match validate_longitute longitude with
   | Ok _longitude -> (
       match validate_latitude latitude with
-      | Ok _latitude -> Resp.Integer 1
+      | Ok _latitude ->
+          Store.mutate key Lifetime.Forever store_to_sortedset
+            sortedset_to_store
+          @@ Sortedsets.zadd ~member ~score:0.0
       | Error message -> Resp.RespError message)
   | Error message -> Resp.RespError message
 
