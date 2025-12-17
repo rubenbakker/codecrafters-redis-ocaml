@@ -40,6 +40,10 @@ let zrank ~(value : string) (set : t option) : Storeop.query_result =
   | Some (idx, _) -> Storeop.Value (Resp.Integer idx)
   | _ -> Storeop.Value Resp.Null
 
+let zcard (set : t option) : Storeop.query_result =
+  let set = match set with Some set -> set | None -> empty () in
+  Storeop.Value (Resp.Integer (Map.length set))
+
 let zrange ~(from_idx : int) ~(to_idx : int) (set : t option) :
     Storeop.query_result =
   let set = match set with Some set -> set | None -> empty () in
