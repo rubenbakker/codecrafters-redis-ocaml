@@ -284,9 +284,9 @@ let unsubscribe (context : context_t) (channel_name : string) :
   in
   (result, context)
 
-let zadd (key : string) (score : string) (value : string) : Resp.t =
+let zadd (key : string) (score : string) (member : string) : Resp.t =
   Store.mutate key Lifetime.Forever store_to_sortedset sortedset_to_store
-  @@ Sortedsets.zadd ~value ~score:(Float.of_string score)
+  @@ Sortedsets.zadd ~member ~score:(Float.of_string score)
 
 let zrank (key : string) (value : string) : Resp.t =
   Store.query key store_to_sortedset @@ Sortedsets.zrank ~value
@@ -296,6 +296,10 @@ let zcard (key : string) : Resp.t =
 
 let zscore (key : string) (member : string) : Resp.t =
   Store.query key store_to_sortedset @@ Sortedsets.zscore member
+
+let zrem (key : string) (member : string) : Resp.t =
+  Store.mutate key Lifetime.Forever store_to_sortedset sortedset_to_store
+  @@ Sortedsets.zrem member
 
 let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
   Store.query key store_to_sortedset
@@ -364,6 +368,8 @@ let process_command (context : context_t) (command : command_t) :
       readonly_command context @@ zrange key from_index to_index
   | "zcard", [ key ] -> readonly_command context @@ zcard key
   | "zscore", [ key; member ] -> readonly_command context @@ zscore key member
+  | "zrem", [ key; member ] ->
+      readwrite_command context command @@ zrem key member
   | _ -> (Resp.Null, context)
 
 let exec (context : context_t) : Resp.t * context_t =

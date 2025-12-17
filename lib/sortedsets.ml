@@ -19,14 +19,25 @@ let sorted_entries (set : t) : entry_t list =
       | 0 -> String.compare left.value right.value
       | result -> result)
 
-let zadd ~(value : string) ~(score : float) (_listener_count : int)
+let zadd ~(member : string) ~(score : float) (_listener_count : int)
     (set : t option) : t Storeop.mutation_result =
   let set = match set with Some set -> set | None -> empty () in
   let previous_size = Map.length set in
-  let result_set = add ~value ~score set in
+  let result_set = add ~value:member ~score set in
   {
     store = Some result_set;
     return = Resp.Integer (Map.length result_set - previous_size);
+    notify_with = [];
+  }
+
+let zrem member (_listener_count : int) (set : t option) :
+    t Storeop.mutation_result =
+  let set = match set with Some set -> set | None -> empty () in
+  let previous_size = Map.length set in
+  let result_set = Map.remove set member in
+  {
+    store = Some result_set;
+    return = Resp.Integer (previous_size - Map.length result_set);
     notify_with = [];
   }
 
