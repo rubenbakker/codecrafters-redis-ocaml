@@ -20,6 +20,13 @@ type t = { slaves : slave_t list }
 
 let state_lock = Stdlib.Mutex.create ()
 
+module type Resource = sig
+  type t
+
+  val get : unit -> t
+  val set : t -> unit
+end
+
 (** lock the repo for access *)
 let unlock () : unit = Stdlib.Mutex.unlock state_lock
 
@@ -66,7 +73,7 @@ let num_insync_slaves () : int =
   protect (fun () ->
       !state
       |> List.filter ~f:(fun slave ->
-             (not slave.pending_write) || slave.bytes_sent = slave.bytes_ack)
+          (not slave.pending_write) || slave.bytes_sent = slave.bytes_ack)
       |> List.length)
 
 let send_replconf_getack (slave : slave_t) : unit =
@@ -89,8 +96,8 @@ let send_replconf_getack (slave : slave_t) : unit =
 let process_replconf_ack (slave : slave_t) (bytes_ack : int) : unit =
   ignore
   @@ protect (fun () ->
-         slave.bytes_ack <- bytes_ack;
-         slave.pending_write <- false);
+      slave.bytes_ack <- bytes_ack;
+      slave.pending_write <- false);
   if true then (
     Stdlib.print_endline "same bytes!";
     List.iter
@@ -104,10 +111,10 @@ let process_replconf_ack (slave : slave_t) (bytes_ack : int) : unit =
           wl.result <- Some wl.num_ack_slaves;
           ignore
           @@ protect (fun () ->
-                 wait_listeners :=
-                   List.filter
-                     ~f:(fun w -> Option.is_none w.result)
-                     !wait_listeners);
+              wait_listeners :=
+                List.filter
+                  ~f:(fun w -> Option.is_none w.result)
+                  !wait_listeners);
           Stdlib.Condition.signal wl.condition)
         else ())
       !wait_listeners;

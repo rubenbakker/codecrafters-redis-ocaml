@@ -44,6 +44,15 @@ let zcard (set : t option) : Storeop.query_result =
   let set = match set with Some set -> set | None -> empty () in
   Storeop.Value (Resp.Integer (Map.length set))
 
+let zscore (key : string) (set : t option) : Storeop.query_result =
+  let set = match set with Some set -> set | None -> empty () in
+  let result =
+    match Map.find set key with
+    | Some score -> Resp.BulkString (Float.to_string score)
+    | None -> Resp.Null
+  in
+  Storeop.Value result
+
 let zrange ~(from_idx : int) ~(to_idx : int) (set : t option) :
     Storeop.query_result =
   let set = match set with Some set -> set | None -> empty () in

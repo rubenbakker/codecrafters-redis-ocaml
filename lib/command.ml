@@ -294,6 +294,9 @@ let zrank (key : string) (value : string) : Resp.t =
 let zcard (key : string) : Resp.t =
   Store.query key store_to_sortedset @@ Sortedsets.zcard
 
+let zscore (key : string) (member : string) : Resp.t =
+  Store.query key store_to_sortedset @@ Sortedsets.zscore member
+
 let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
   Store.query key store_to_sortedset
   @@ Sortedsets.zrange ~from_idx:(Int.of_string from_index)
@@ -360,6 +363,7 @@ let process_command (context : context_t) (command : command_t) :
   | "zrange", [ key; from_index; to_index ] ->
       readonly_command context @@ zrange key from_index to_index
   | "zcard", [ key ] -> readonly_command context @@ zcard key
+  | "zscore", [ key; member ] -> readonly_command context @@ zscore key member
   | _ -> (Resp.Null, context)
 
 let exec (context : context_t) : Resp.t * context_t =
