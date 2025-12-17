@@ -341,7 +341,9 @@ let geopos (key : string) (members : string list) : Resp.t =
   | Some scores ->
       scores |> convert_scores_to_geopos |> convert_geopos_list_to_resp
       |> fun result -> Storeop.Value result
-  | None -> Storeop.Value (Resp.RespList [])
+  | None ->
+      Storeop.Value
+        (Resp.RespList (List.map members ~f:(fun _x -> Resp.NullArray)))
 
 let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
   Store.query key store_to_sortedset
