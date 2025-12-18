@@ -363,6 +363,9 @@ let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
 let acl_whoami () : Resp.t = Resp.BulkString "default"
 let acl_getuser (username : string) : Resp.t = Auth.get_user username
 
+let act_setuser_password (username : string) (password : string) : Resp.t =
+  Auth.set_password username password
+
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
   (result, context)
@@ -440,6 +443,12 @@ let process_command (context : context_t) (command : command_t) :
       readonly_command context @@ acl_whoami ()
   | "acl", [ getuser; username ] when String.(lowercase getuser = "getuser") ->
       readonly_command context @@ acl_getuser username
+  | "acl", [ setuser; username; password ]
+    when String.(lowercase setuser = "setuser")
+         && String.(is_prefix password ~prefix:">") ->
+      readonly_command context
+      @@ act_setuser_password username
+           (String.sub ~pos:1 ~len:(String.length password - 1) password)
   | cmd, _ ->
       ( Resp.RespError (Stdlib.Printf.sprintf "ERR unknown command %s" cmd),
         context )
