@@ -11,6 +11,7 @@ let empty_context (socket : file_descr) : Command.context_t =
     post_process = Noop;
     subscription_mode = false;
     slave = None;
+    is_authenticated = Bool.(Auth.needs_auth "default" = false);
   }
 
 let post_process_command (context : Command.context_t)

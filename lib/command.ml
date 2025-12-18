@@ -20,6 +20,7 @@ type context_t = {
   post_process : post_process_t;
   subscription_mode : bool;
   slave : Master.slave_t option;
+  is_authenticated : bool;
 }
 
 let parse_command_line (command : Resp.t) : string * string list =
@@ -366,8 +367,10 @@ let acl_getuser (username : string) : Resp.t = Auth.get_user username
 let act_setuser_password (username : string) (password : string) : Resp.t =
   Auth.set_password username password
 
-let auth (username : string) (password : string) : Resp.t =
-  Auth.auth username password
+let auth (context : context_t) (username : string) (password : string) :
+    Resp.t * context_t =
+  let success, result = Auth.auth username password in
+  (result, { context with is_authenticated = success })
 
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
@@ -452,8 +455,7 @@ let process_command (context : context_t) (command : command_t) :
       readonly_command context
       @@ act_setuser_password username
            (String.sub ~pos:1 ~len:(String.length password - 1) password)
-  | "auth", [ username; password ] ->
-      readonly_command context @@ auth username password
+  | "auth", [ username; password ] -> auth context username password
   | cmd, _ ->
       ( Resp.RespError (Stdlib.Printf.sprintf "ERR unknown command %s" cmd),
         context )
@@ -502,11 +504,16 @@ let process_subscription_command (context : context_t) (command : command_t) :
         context )
 
 let process (context : context_t) (command : command_t) : Resp.t * context_t =
-  match context.command_queue with
-  | Some queue -> process_transaction_command context queue command
-  | None ->
-      if not context.subscription_mode then
-        match command with
-        | "multi", [] -> multi context
-        | _ -> process_command context command
-      else process_subscription_command context command
+  if context.is_authenticated then
+    match context.command_queue with
+    | Some queue -> process_transaction_command context queue command
+    | None ->
+        if not context.subscription_mode then
+          match command with
+          | "multi", [] -> multi context
+          | _ -> process_command context command
+        else process_subscription_command context command
+  else
+    match command with
+    | "auth", [ username; password ] -> auth context username password
+    | _ -> (Resp.RespError "NOAUTH Authentication required.", context)

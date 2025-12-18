@@ -45,7 +45,7 @@ let set_password (username : string) (password : string) : Resp.t =
           (users, Resp.SimpleString "OK")
       | None -> (users, Resp.Null))
 
-let auth (username : string) (password : string) : Resp.t =
+let auth (username : string) (password : string) : bool * Resp.t =
   let error_msg =
     "WRONGPASS invalid username-password pair or user is disabled."
   in
@@ -57,7 +57,14 @@ let auth (username : string) (password : string) : Resp.t =
               let password_hash = Digestif.SHA256.digest_string password in
               let existing_hash = Digestif.SHA256.of_hex existing_password in
               if Digestif.SHA256.unsafe_compare password_hash existing_hash = 0
-              then Resp.SimpleString "OK"
-              else Resp.RespError error_msg
-          | None -> Resp.RespError error_msg)
-      | None -> Resp.RespError error_msg)
+              then (true, Resp.SimpleString "OK")
+              else (false, Resp.RespError error_msg)
+          | None -> (false, Resp.RespError error_msg))
+      | None -> (false, Resp.RespError error_msg))
+
+let needs_auth (username : string) : bool =
+  Users.query (fun users ->
+      match Hashtbl.find users username with
+      | Some user -> (
+          match user.password with Some _ -> true | None -> false)
+      | None -> false)
