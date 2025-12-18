@@ -4,6 +4,7 @@ let min_longitude = -180.0
 let max_longitude = 180.0
 let latitude_range = max_latitude -. min_latitude
 let longitude_range = max_longitude -. min_longitude
+let earth_radius_in_m = 6372797.560856
 
 let longitute_of_string (longitude : string) : (float, string) Result.t =
   match Float.of_string_opt longitude with
@@ -223,4 +224,53 @@ module Decode = struct
 
     convert_grid_numbers_to_coordinates grid_latitude_number
       grid_longitude_number
+end
+
+module Distance = struct
+  let deg_to_rad degrees = degrees *. (Float.pi /. 180.0)
+
+  let distance_of_coordinates_in_m (from_coordinates : Decode.coordinates)
+      (to_coordinates : Decode.coordinates) : float =
+    let open! Base in
+    let from_longitude_radius = deg_to_rad from_coordinates.longitude in
+    let to_longitude_radius = deg_to_rad to_coordinates.longitude in
+    let v = Float.(sin (from_longitude_radius - to_longitude_radius) / 2.0) in
+    let from_latitude_radius = deg_to_rad from_coordinates.latitude in
+    let to_latitude_radius = deg_to_rad to_coordinates.latitude in
+    let u = Float.(sin (from_latitude_radius - to_latitude_radius) / 2.0) in
+    let a =
+      Float.(
+        (u * u) + (cos from_latitude_radius * cos to_latitude_radius * v * v))
+    in
+    Float.(2.0 * earth_radius_in_m * asin (sqrt a))
+
+  let convert_float_to_string (n : float) : string =
+    let open! Base in
+    Float.to_string n |> fun x ->
+    match String.chop_suffix x ~suffix:"." with Some s -> s | None -> x
+
+  let distance_in_m_as_resp (from_score : float) (to_score : float) : Resp.t =
+    let open! Base in
+    let from_coordinates = Decode.decode (Int64.of_float from_score) in
+    let to_coordinates = Decode.decode (Int64.of_float to_score) in
+    let distance =
+      distance_of_coordinates_in_m from_coordinates to_coordinates
+    in
+    Resp.BulkString (convert_float_to_string distance)
+
+  let distance_of_places_in_m (from_member : string) (to_member : string)
+      (set : Sortedsets.t option) : Storeop.query_result =
+    let open! Base in
+    let result =
+      match set with
+      | None -> Resp.Null
+      | Some set -> (
+          let from_score = Map.find set from_member in
+          let to_score = Map.find set to_member in
+          match (from_score, to_score) with
+          | Some from_score, Some to_score ->
+              distance_in_m_as_resp from_score to_score
+          | _ -> Resp.Null)
+    in
+    Storeop.Value result
 end

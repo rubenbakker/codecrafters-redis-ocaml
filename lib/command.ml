@@ -345,6 +345,11 @@ let geopos (key : string) (members : string list) : Resp.t =
       Storeop.Value
         (Resp.RespList (List.map members ~f:(fun _x -> Resp.NullArray)))
 
+let geodist (key : string) (from_member : string) (to_member : string) : Resp.t
+    =
+  Store.query key store_to_sortedset
+  @@ Geospat.Distance.distance_of_places_in_m from_member to_member
+
 let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
   Store.query key store_to_sortedset
   @@ Sortedsets.zrange ~from_idx:(Int.of_string from_index)
@@ -417,6 +422,8 @@ let process_command (context : context_t) (command : command_t) :
   | "geoadd", [ key; longitude; latitude; member ] ->
       readonly_command context @@ geoadd key longitude latitude member
   | "geopos", key :: members -> readonly_command context @@ geopos key members
+  | "geodist", [ key; from_member; to_member ] ->
+      readonly_command context @@ geodist key from_member to_member
   | _ -> (Resp.Null, context)
 
 let exec (context : context_t) : Resp.t * context_t =

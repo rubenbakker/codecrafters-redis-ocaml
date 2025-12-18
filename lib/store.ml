@@ -177,7 +177,6 @@ let rec expire_listeners () : unit =
   ignore
   @@ Listeners.mutate (fun listeners ->
       let current_time = Lifetime.now () in
-      Stdlib.print_int (List.length (StringMap.to_list listeners));
       StringMap.map
         (fun queue ->
           Queue.filter queue ~f:(fun listener ->
