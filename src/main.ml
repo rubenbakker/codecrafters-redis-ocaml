@@ -40,7 +40,7 @@ let rec process_client client_socket (context : Command.context_t) =
   with
   | Unix_error (ECONNRESET, _, _) ->
       Stdlib.print_endline "Error: unix error - reset connection"
-  | End_of_file -> Stdlib.print_endline "Error: end of file"
+  | End_of_file -> Stdlib.print_endline "[INFO] client closed connection"
   | _ -> Stdlib.print_endline "Error: Unknown"
 
 let send_to_master ((inch, outch) : Stdlib.in_channel * Stdlib.out_channel)
@@ -82,7 +82,7 @@ let rec process_slave channels (context : Command.context_t)
        process_slave channels context (acc_command_length + command_length))
   with
   | Unix_error (ECONNRESET, _, _) ->
-      Stdlib.print_endline "Error: unix error - reset connection"
+      Stdlib.print_endline "[INFO] Slave closed connection"
   | End_of_file -> Stdlib.print_endline "Error: end of file"
   | e ->
       Stdlib.print_endline "Error: Unknown";
