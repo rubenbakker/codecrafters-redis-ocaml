@@ -273,4 +273,30 @@ module Distance = struct
           | _ -> Resp.Null)
     in
     Storeop.Value result
+
+  let search_within_radius (longitude : string) (latitude : string)
+      (radius : string) (set : Sortedsets.t option) : Storeop.query_result =
+    let open! Base in
+    let result =
+      match set with
+      | None -> Resp.NullArray
+      | Some set ->
+          let radius = Float.of_string radius in
+          let longitude = Float.of_string longitude in
+          let latitude = Float.of_string latitude in
+          let needle_coordinates : Decode.coordinates =
+            { longitude; latitude }
+          in
+          Sortedsets.sorted_entries set
+          |> List.filter ~f:(fun (entry : Sortedsets.entry_t) ->
+              let coordinates = Decode.decode (Int64.of_float entry.score) in
+              let distance =
+                distance_of_coordinates_in_m needle_coordinates coordinates
+              in
+              Float.(distance <= radius))
+          |> List.map ~f:(fun (entry : Sortedsets.entry_t) ->
+              Resp.BulkString entry.value)
+          |> fun l -> Resp.RespList l
+    in
+    Storeop.Value result
 end

@@ -350,6 +350,11 @@ let geodist (key : string) (from_member : string) (to_member : string) : Resp.t
   Store.query key store_to_sortedset
   @@ Geospat.Distance.distance_of_places_in_m from_member to_member
 
+let geosearch (key : string) (longitude : string) (latitude : string)
+    (radius : string) =
+  Store.query key store_to_sortedset
+  @@ Geospat.Distance.search_within_radius longitude latitude radius
+
 let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
   Store.query key store_to_sortedset
   @@ Sortedsets.zrange ~from_idx:(Int.of_string from_index)
@@ -424,7 +429,12 @@ let process_command (context : context_t) (command : command_t) :
   | "geopos", key :: members -> readonly_command context @@ geopos key members
   | "geodist", [ key; from_member; to_member ] ->
       readonly_command context @@ geodist key from_member to_member
-  | _ -> (Resp.Null, context)
+  | ( "geosearch",
+      [ key; "FROMLONLAT"; longitude; latitude; "BYRADIUS"; radius; "m" ] ) ->
+      readonly_command context @@ geosearch key longitude latitude radius
+  | cmd, _ ->
+      ( Resp.RespError (Stdlib.Printf.sprintf "ERR unknown command %s" cmd),
+        context )
 
 let exec (context : context_t) : Resp.t * context_t =
   match context.command_queue with
