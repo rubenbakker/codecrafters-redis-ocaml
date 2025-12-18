@@ -19,15 +19,17 @@ let get_user (username : string) : Resp.t =
   Users.query (fun users ->
       match Hashtbl.find users username with
       | Some user ->
-          let password_string =
-            match user.password with None -> "nopass" | Some hash -> hash
+          let flags_list, password_list =
+            match user.password with
+            | None -> ([ Resp.BulkString "nopass" ], [])
+            | Some password -> ([], [ Resp.BulkString password ])
           in
           Resp.RespList
             [
               Resp.BulkString "flags";
-              Resp.RespList [ Resp.BulkString password_string ];
+              Resp.RespList flags_list;
               Resp.BulkString "passwords";
-              Resp.RespList [];
+              Resp.RespList password_list;
             ]
       | None -> Resp.Null)
 
