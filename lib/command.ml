@@ -366,6 +366,9 @@ let acl_getuser (username : string) : Resp.t = Auth.get_user username
 let act_setuser_password (username : string) (password : string) : Resp.t =
   Auth.set_password username password
 
+let auth (username : string) (password : string) : Resp.t =
+  Auth.auth username password
+
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
   (result, context)
@@ -449,6 +452,8 @@ let process_command (context : context_t) (command : command_t) :
       readonly_command context
       @@ act_setuser_password username
            (String.sub ~pos:1 ~len:(String.length password - 1) password)
+  | "auth", [ username; password ] ->
+      readonly_command context @@ auth username password
   | cmd, _ ->
       ( Resp.RespError (Stdlib.Printf.sprintf "ERR unknown command %s" cmd),
         context )

@@ -44,3 +44,20 @@ let set_password (username : string) (password : string) : Resp.t =
             ~data:{ user with password = Some password_hash };
           (users, Resp.SimpleString "OK")
       | None -> (users, Resp.Null))
+
+let auth (username : string) (password : string) : Resp.t =
+  let error_msg =
+    "WRONGPASS invalid username-password pair or user is disabled."
+  in
+  Users.query (fun users ->
+      match Hashtbl.find users username with
+      | Some user -> (
+          match user.password with
+          | Some existing_password ->
+              let password_hash = Digestif.SHA256.digest_string password in
+              let existing_hash = Digestif.SHA256.of_hex existing_password in
+              if Digestif.SHA256.unsafe_compare password_hash existing_hash = 0
+              then Resp.SimpleString "OK"
+              else Resp.RespError error_msg
+          | None -> Resp.RespError error_msg)
+      | None -> Resp.RespError error_msg)
