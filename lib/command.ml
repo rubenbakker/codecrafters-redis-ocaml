@@ -360,6 +360,8 @@ let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
   @@ Sortedsets.zrange ~from_idx:(Int.of_string from_index)
        ~to_idx:(Int.of_string to_index)
 
+let acl_whoami () : Resp.t = Resp.BulkString "default"
+
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
   (result, context)
@@ -432,6 +434,7 @@ let process_command (context : context_t) (command : command_t) :
   | ( "geosearch",
       [ key; "FROMLONLAT"; longitude; latitude; "BYRADIUS"; radius; "m" ] ) ->
       readonly_command context @@ geosearch key longitude latitude radius
+  | "acl", [ "WHOAMI" ] -> readonly_command context @@ acl_whoami ()
   | cmd, _ ->
       ( Resp.RespError (Stdlib.Printf.sprintf "ERR unknown command %s" cmd),
         context )
