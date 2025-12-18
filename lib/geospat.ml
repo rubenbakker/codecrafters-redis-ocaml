@@ -234,10 +234,10 @@ module Distance = struct
     let open! Base in
     let from_longitude_radius = deg_to_rad from_coordinates.longitude in
     let to_longitude_radius = deg_to_rad to_coordinates.longitude in
-    let v = Float.(sin (from_longitude_radius - to_longitude_radius) / 2.0) in
+    let v = Float.(sin ((to_longitude_radius - from_longitude_radius) / 2.0)) in
     let from_latitude_radius = deg_to_rad from_coordinates.latitude in
     let to_latitude_radius = deg_to_rad to_coordinates.latitude in
-    let u = Float.(sin (from_latitude_radius - to_latitude_radius) / 2.0) in
+    let u = Float.(sin ((to_latitude_radius - from_latitude_radius) / 2.0)) in
     let a =
       Float.(
         (u * u) + (cos from_latitude_radius * cos to_latitude_radius * v * v))
