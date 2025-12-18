@@ -19,7 +19,7 @@ let get_user (username : string) : Resp.t =
   Users.query (fun users ->
       match Hashtbl.find users username with
       | Some user ->
-          let flags_list, password_list =
+          let flag_list, password_list =
             match user.password with
             | None -> ([ Resp.BulkString "nopass" ], [])
             | Some password -> ([], [ Resp.BulkString password ])
@@ -27,7 +27,7 @@ let get_user (username : string) : Resp.t =
           Resp.RespList
             [
               Resp.BulkString "flags";
-              Resp.RespList flags_list;
+              Resp.RespList flag_list;
               Resp.BulkString "passwords";
               Resp.RespList password_list;
             ]
@@ -42,5 +42,5 @@ let set_password (username : string) (password : string) : Resp.t =
           in
           Hashtbl.set users ~key:username
             ~data:{ user with password = Some password_hash };
-          (users, Resp.BulkString "OK")
+          (users, Resp.SimpleString "OK")
       | None -> (users, Resp.Null))
