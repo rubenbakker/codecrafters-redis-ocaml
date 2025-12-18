@@ -362,6 +362,9 @@ let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
 
 let acl_whoami () : Resp.t = Resp.BulkString "default"
 
+let acl_getuser (_username : string) : Resp.t =
+  Resp.RespList [ Resp.BulkString "flags"; Resp.RespList [] ]
+
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
   (result, context)
@@ -434,7 +437,11 @@ let process_command (context : context_t) (command : command_t) :
   | ( "geosearch",
       [ key; "FROMLONLAT"; longitude; latitude; "BYRADIUS"; radius; "m" ] ) ->
       readonly_command context @@ geosearch key longitude latitude radius
-  | "acl", [ "WHOAMI" ] -> readonly_command context @@ acl_whoami ()
+  | "acl", [ subcommand ] when String.(lowercase subcommand = "whoami") ->
+      readonly_command context @@ acl_whoami ()
+  | "acl", [ subcommand; username ]
+    when String.(lowercase subcommand = "getuser") ->
+      readonly_command context @@ acl_getuser username
   | cmd, _ ->
       ( Resp.RespError (Stdlib.Printf.sprintf "ERR unknown command %s" cmd),
         context )
