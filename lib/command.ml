@@ -361,9 +361,7 @@ let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
        ~to_idx:(Int.of_string to_index)
 
 let acl_whoami () : Resp.t = Resp.BulkString "default"
-
-let acl_getuser (_username : string) : Resp.t =
-  Resp.RespList [ Resp.BulkString "flags"; Resp.RespList [] ]
+let acl_getuser (username : string) : Resp.t = Auth.get_user username
 
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
@@ -434,13 +432,13 @@ let process_command (context : context_t) (command : command_t) :
   | "geopos", key :: members -> readonly_command context @@ geopos key members
   | "geodist", [ key; from_member; to_member ] ->
       readonly_command context @@ geodist key from_member to_member
-  | ( "geosearch",
-      [ key; "FROMLONLAT"; longitude; latitude; "BYRADIUS"; radius; "m" ] ) ->
+  | "geosearch", [ key; fromlonlat; longitude; latitude; byradius; radius; "m" ]
+    when String.(lowercase fromlonlat = "fromlonlat")
+         && String.(lowercase byradius = "byradius") ->
       readonly_command context @@ geosearch key longitude latitude radius
-  | "acl", [ subcommand ] when String.(lowercase subcommand = "whoami") ->
+  | "acl", [ whoami ] when String.(lowercase whoami = "whoami") ->
       readonly_command context @@ acl_whoami ()
-  | "acl", [ subcommand; username ]
-    when String.(lowercase subcommand = "getuser") ->
+  | "acl", [ getuser; username ] when String.(lowercase getuser = "getuser") ->
       readonly_command context @@ acl_getuser username
   | cmd, _ ->
       ( Resp.RespError (Stdlib.Printf.sprintf "ERR unknown command %s" cmd),
