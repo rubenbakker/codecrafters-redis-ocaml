@@ -15,4 +15,4 @@
  (license "MIT")
  (allow_empty true)
  (version 0.1)
- (depends lwt base ppx_assert ppx_inline_test ppx_expect ppx_sexp_conv ppx_compare digestif))
+ (depends lwt base ppx_assert ppx_inline_test ppx_expect ppx_sexp_conv ppx_compare digestif base64))

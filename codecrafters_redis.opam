@@ -17,6 +17,7 @@ depends: [
   "ppx_sexp_conv"
   "ppx_compare"
   "digestif"
+  "base64"
   "odoc" {with-doc}
 ]
 build: [
