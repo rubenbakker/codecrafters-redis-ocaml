@@ -16,6 +16,7 @@ depends: [
   "ppx_expect"
   "ppx_sexp_conv"
   "ppx_compare"
+  "digestif"
   "odoc" {with-doc}
 ]
 build: [
