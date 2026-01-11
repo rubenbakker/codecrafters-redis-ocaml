@@ -1,9 +1,11 @@
-type t =
+type storage_t =
   | StorageInt of Ints.t
   | StorageString of Strings.t
   | StorageList of Lists.t
   | StorageStream of Streams.t
   | StorageSortedSet of Sortedsets.t
+
+type t = storage_t
 
 val get : string -> t option
 val set : string -> t -> Lifetime.t -> unit

@@ -20,6 +20,7 @@ type context_t = {
   post_process : post_process_t;
   subscription_mode : bool;
   slave : Master.slave_t option;
+  is_authenticated : bool;
 }
 
 let parse_command_line (command : Resp.t) : string * string list =
@@ -62,6 +63,12 @@ let store_to_int (storage_value : Store.t option) : Ints.t option =
 
 let store_to_string (storage_value : Store.t option) : Strings.t option =
   match storage_value with Some (StorageString str) -> Some str | _ -> None
+
+let store_to_sortedset (storage_value : Store.t option) : Sortedsets.t option =
+  match storage_value with Some (StorageSortedSet set) -> Some set | _ -> None
+
+let sortedset_to_store (set : Sortedsets.t option) : Store.t option =
+  match set with Some set -> Some (Store.StorageSortedSet set) | _ -> None
 
 let stream_to_store (stream : Streams.t option) : Store.t option =
   match stream with
@@ -143,14 +150,14 @@ let blpop (key : string) (timeout : string) : Resp.t =
 
 let type_cmd (key : string) : Resp.t =
   (match Store.get key with
-  | None -> "none"
-  | Some v -> (
-      match v with
-      | Store.StorageInt _ -> "integer"
-      | Store.StorageList _ -> "list"
-      | Store.StorageString _ -> "string"
-      | Store.StorageStream _ -> "stream"
-      | Store.StorageSortedSet _ -> "sortedset"))
+    | None -> "none"
+    | Some v -> (
+        match v with
+        | Store.StorageInt _ -> "integer"
+        | Store.StorageList _ -> "list"
+        | Store.StorageString _ -> "string"
+        | Store.StorageStream _ -> "stream"
+        | Store.StorageSortedSet _ -> "sortedset"))
   |> fun v -> Resp.SimpleString v
 
 let echo (message : string) : Resp.t = Resp.BulkString message
@@ -168,7 +175,7 @@ let xread (rest : string list) (timeout : Lifetime.t option) : Resp.t =
   let from_ids = List.sub rest ~pos:count ~len:(List.length rest - count) in
   List.zip_exn keys from_ids
   |> List.map ~f:(fun (key, from_id) ->
-         Store.query key store_to_stream (Streams.xread key from_id timeout))
+      Store.query key store_to_stream (Streams.xread key from_id timeout))
   |> fun l ->
   match l with
   | [ Resp.NullArray ] | [] -> Resp.NullArray
@@ -278,10 +285,92 @@ let unsubscribe (context : context_t) (channel_name : string) :
   in
   (result, context)
 
-let zadd (_key : string) (_score : string) (_value : string) : Resp.t =
-  Resp.Integer 1
-(* Store.mutate key Lifetime.Forever store_to_stream stream_to_store *)
-(*   (Streams.xadd id rest) *)
+let zadd (key : string) (score : string) (member : string) : Resp.t =
+  Store.mutate key Lifetime.Forever store_to_sortedset sortedset_to_store
+  @@ Sortedsets.zadd ~member ~score:(Float.of_string score)
+
+let zrank (key : string) (value : string) : Resp.t =
+  Store.query key store_to_sortedset @@ Sortedsets.zrank ~value
+
+let zcard (key : string) : Resp.t =
+  Store.query key store_to_sortedset @@ Sortedsets.zcard
+
+let zscore (key : string) (member : string) : Resp.t =
+  Store.query key store_to_sortedset @@ Sortedsets.zscore member
+
+let zrem (key : string) (member : string) : Resp.t =
+  Store.mutate key Lifetime.Forever store_to_sortedset sortedset_to_store
+  @@ Sortedsets.zrem member
+
+let geoadd (key : string) (longitude : string) (latitude : string)
+    (member : string) : Resp.t =
+  match Geospat.geocode_of_strings longitude latitude with
+  | Ok (longitude, latitude) ->
+      Store.mutate key Lifetime.Forever store_to_sortedset sortedset_to_store
+      @@ Sortedsets.zadd ~member
+           ~score:(Geospat.Encode.encode longitude latitude |> Float.of_int64)
+  | Error message -> Resp.RespError message
+
+(*List.map ~f:(fun (member, score) -> match score with (Some score -> match Geospat.Decode.decode score with 
+    | Some (longitude, latitude) -> Resp.RespList [Resp.BulkString (Int.to_string longitude); Resp.BulkString (Int.to_string latitude)]))*)
+
+let convert_scores_to_geopos (scores : float option list) :
+    (float * float) option list =
+  List.map scores ~f:(fun score ->
+      Option.map score ~f:(fun v ->
+          let coords = Geospat.Decode.decode (Int64.of_float v) in
+          (coords.longitude, coords.latitude)))
+
+let convert_geopos_to_resp ((longitude, latitude) : float * float) : Resp.t =
+  Resp.RespList
+    [
+      Resp.BulkString (Float.to_string longitude);
+      Resp.BulkString (Float.to_string latitude);
+    ]
+
+let convert_geopos_list_to_resp (scores : (float * float) option list) : Resp.t
+    =
+  List.map scores ~f:(fun score_opt ->
+      match score_opt with
+      | Some score -> convert_geopos_to_resp score
+      | None -> Resp.NullArray)
+  |> fun result -> Resp.RespList result
+
+let geopos (key : string) (members : string list) : Resp.t =
+  Store.query key store_to_sortedset @@ fun set ->
+  match Sortedsets.zscores members set with
+  | Some scores ->
+      scores |> convert_scores_to_geopos |> convert_geopos_list_to_resp
+      |> fun result -> Storeop.Value result
+  | None ->
+      Storeop.Value
+        (Resp.RespList (List.map members ~f:(fun _x -> Resp.NullArray)))
+
+let geodist (key : string) (from_member : string) (to_member : string) : Resp.t
+    =
+  Store.query key store_to_sortedset
+  @@ Geospat.Distance.distance_of_places_in_m from_member to_member
+
+let geosearch (key : string) (longitude : string) (latitude : string)
+    (radius : string) =
+  Store.query key store_to_sortedset
+  @@ Geospat.Distance.search_within_radius longitude latitude radius
+
+let zrange (key : string) (from_index : string) (to_index : string) : Resp.t =
+  Store.query key store_to_sortedset
+  @@ Sortedsets.zrange ~from_idx:(Int.of_string from_index)
+       ~to_idx:(Int.of_string to_index)
+
+let acl_whoami () : Resp.t = Resp.BulkString "default"
+let acl_getuser (username : string) : Resp.t = Auth.get_user username
+
+let act_setuser_password (username : string) (password : string) : Resp.t =
+  Auth.set_password username password
+
+let auth (context : context_t) (username : string) (password : string) :
+    Resp.t * context_t =
+  let success, result = Auth.auth username password in
+  (result, { context with is_authenticated = success })
 
 let readonly_command (context : context_t) (result : Resp.t) :
     Resp.t * context_t =
@@ -340,7 +429,36 @@ let process_command (context : context_t) (command : command_t) :
   | "keys", [ pattern ] -> readonly_command context @@ keys pattern
   | "zadd", [ key; score; value ] ->
       readwrite_command context command @@ zadd key score value
-  | _ -> (Resp.Null, context)
+  | "zrank", [ key; value ] -> readonly_command context @@ zrank key value
+  | "zrange", [ key; from_index; to_index ] ->
+      readonly_command context @@ zrange key from_index to_index
+  | "zcard", [ key ] -> readonly_command context @@ zcard key
+  | "zscore", [ key; member ] -> readonly_command context @@ zscore key member
+  | "zrem", [ key; member ] ->
+      readwrite_command context command @@ zrem key member
+  | "geoadd", [ key; longitude; latitude; member ] ->
+      readonly_command context @@ geoadd key longitude latitude member
+  | "geopos", key :: members -> readonly_command context @@ geopos key members
+  | "geodist", [ key; from_member; to_member ] ->
+      readonly_command context @@ geodist key from_member to_member
+  | "geosearch", [ key; fromlonlat; longitude; latitude; byradius; radius; "m" ]
+    when String.(lowercase fromlonlat = "fromlonlat")
+         && String.(lowercase byradius = "byradius") ->
+      readonly_command context @@ geosearch key longitude latitude radius
+  | "acl", [ whoami ] when String.(lowercase whoami = "whoami") ->
+      readonly_command context @@ acl_whoami ()
+  | "acl", [ getuser; username ] when String.(lowercase getuser = "getuser") ->
+      readonly_command context @@ acl_getuser username
+  | "acl", [ setuser; username; password ]
+    when String.(lowercase setuser = "setuser")
+         && String.(is_prefix password ~prefix:">") ->
+      readonly_command context
+      @@ act_setuser_password username
+           (String.sub ~pos:1 ~len:(String.length password - 1) password)
+  | "auth", [ username; password ] -> auth context username password
+  | cmd, _ ->
+      ( Resp.RespError (Stdlib.Printf.sprintf "ERR unknown command %s" cmd),
+        context )
 
 let exec (context : context_t) : Resp.t * context_t =
   match context.command_queue with
@@ -350,8 +468,8 @@ let exec (context : context_t) : Resp.t * context_t =
   | Some queue ->
       Queue.to_list queue
       |> List.map ~f:(fun command ->
-             let result, _ = process_command context command in
-             result)
+          let result, _ = process_command context command in
+          result)
       |> fun list_of_resp ->
       (Resp.RespList list_of_resp, { context with command_queue = None })
 
@@ -386,11 +504,16 @@ let process_subscription_command (context : context_t) (command : command_t) :
         context )
 
 let process (context : context_t) (command : command_t) : Resp.t * context_t =
-  match context.command_queue with
-  | Some queue -> process_transaction_command context queue command
-  | None ->
-      if not context.subscription_mode then
-        match command with
-        | "multi", [] -> multi context
-        | _ -> process_command context command
-      else process_subscription_command context command
+  if context.is_authenticated then
+    match context.command_queue with
+    | Some queue -> process_transaction_command context queue command
+    | None ->
+        if not context.subscription_mode then
+          match command with
+          | "multi", [] -> multi context
+          | _ -> process_command context command
+        else process_subscription_command context command
+  else
+    match command with
+    | "auth", [ username; password ] -> auth context username password
+    | _ -> (Resp.RespError "NOAUTH Authentication required.", context)

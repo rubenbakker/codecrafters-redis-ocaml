@@ -16,29 +16,27 @@ type wait_listener_t = {
   mutable result : int option;
 }
 
-type t = { slaves : slave_t list }
+module Slaves = Protected.Resource.Make (struct
+  type t = slave_t list
 
-let state_lock = Stdlib.Mutex.create ()
+  let state : t ref = ref []
+  let get () = !state
+  let set s = state := s
+end)
 
-(** lock the repo for access *)
-let unlock () : unit = Stdlib.Mutex.unlock state_lock
+module WaitLiteners = Protected.Resource.Make (struct
+  type t = wait_listener_t list
 
-(** unlock the repo after access *)
-let lock () : unit = Stdlib.Mutex.lock state_lock
-
-let protect fn =
-  Stdlib.Fun.protect ~finally:unlock (fun () ->
-      lock ();
-      fn ())
-
-let state : slave_t list ref = ref []
-let wait_listeners : wait_listener_t list ref = ref []
+  let wait_listeners : t ref = ref []
+  let get () = !wait_listeners
+  let set w = wait_listeners := w
+end)
 
 let register_slave (socket : Unix.file_descr) (rdb : Resp.t option) : slave_t =
   let slave =
     { socket; pending_write = false; bytes_sent = 0; bytes_ack = 0 }
   in
-  protect (fun () -> state := slave :: !state);
+  Slaves.mutate (fun slaves -> slave :: slaves);
   (match rdb with
   | Some rdb ->
       let rdb_string = Resp.to_string rdb in
@@ -50,7 +48,7 @@ let register_slave (socket : Unix.file_descr) (rdb : Resp.t option) : slave_t =
   slave
 
 let notify_slaves (command : Resp.t) : unit =
-  protect (fun () ->
+  Slaves.query (fun slaves ->
       List.iter
         ~f:(fun slave ->
           let result = Resp.to_string command in
@@ -60,13 +58,13 @@ let notify_slaves (command : Resp.t) : unit =
           slave.pending_write <- true;
           slave.bytes_sent <- slave.bytes_sent + payload_length;
           ())
-        !state)
+        slaves)
 
 let num_insync_slaves () : int =
-  protect (fun () ->
-      !state
+  Slaves.query (fun slaves ->
+      slaves
       |> List.filter ~f:(fun slave ->
-             (not slave.pending_write) || slave.bytes_sent = slave.bytes_ack)
+          (not slave.pending_write) || slave.bytes_sent = slave.bytes_ack)
       |> List.length)
 
 let send_replconf_getack (slave : slave_t) : unit =
@@ -88,9 +86,10 @@ let send_replconf_getack (slave : slave_t) : unit =
 
 let process_replconf_ack (slave : slave_t) (bytes_ack : int) : unit =
   ignore
-  @@ protect (fun () ->
-         slave.bytes_ack <- bytes_ack;
-         slave.pending_write <- false);
+  @@ Slaves.mutate (fun slaves ->
+      slave.bytes_ack <- bytes_ack;
+      slave.pending_write <- false;
+      slaves);
   if true then (
     Stdlib.print_endline "same bytes!";
     List.iter
@@ -103,22 +102,23 @@ let process_replconf_ack (slave : slave_t) (bytes_ack : int) : unit =
         if wl.num_ack_slaves >= wl.num_required_slaves then (
           wl.result <- Some wl.num_ack_slaves;
           ignore
-          @@ protect (fun () ->
-                 wait_listeners :=
-                   List.filter
-                     ~f:(fun w -> Option.is_none w.result)
-                     !wait_listeners);
+          @@ WaitLiteners.mutate (fun wl ->
+              List.filter ~f:(fun w -> Option.is_none w.result) wl);
           Stdlib.Condition.signal wl.condition)
         else ())
-      !wait_listeners;
-    ignore @@ protect (fun () -> slave.bytes_sent <- slave.bytes_sent + 34))
+      (WaitLiteners.get ());
+    ignore
+    @@ Slaves.mutate (fun slaves ->
+        slave.bytes_sent <- slave.bytes_sent + 34;
+        slaves))
   else (
     Stdlib.Printf.printf "Not the same %d != %d" slave.bytes_ack
       slave.bytes_sent;
     Stdlib.flush Stdlib.stdout)
 
 let start_sync_slaves () =
-  List.iter ~f:(fun slave -> ignore @@ send_replconf_getack slave) !state
+  Slaves.query (fun slaves ->
+      List.iter ~f:(fun slave -> ignore @@ send_replconf_getack slave) slaves)
 
 let sync_slaves_for_listener (required_slaves : int) (lifetime : Lifetime.t) :
     int =
@@ -135,14 +135,15 @@ let sync_slaves_for_listener (required_slaves : int) (lifetime : Lifetime.t) :
         result = None;
       }
     in
-    ignore (protect (fun () -> wait_listeners := listener :: !wait_listeners));
+    ignore
+      (WaitLiteners.mutate (fun wait_listeners -> listener :: wait_listeners));
     start_sync_slaves ();
     Stdlib.Mutex.lock listener.lock;
     Stdlib.Condition.wait listener.condition listener.lock;
     listener.num_ack_slaves
 
 let rec remove_expired_entries_loop () : unit =
-  protect (fun () ->
+  WaitLiteners.mutate (fun wait_listeners ->
       let current_time = Lifetime.now () in
       List.iter
         ~f:(fun wl ->
@@ -152,14 +153,13 @@ let rec remove_expired_entries_loop () : unit =
             | Lifetime.Expires e -> Int64.(e < current_time)
           in
           if expired then Stdlib.Condition.signal wl.condition)
-        !wait_listeners;
-      wait_listeners :=
-        List.filter
-          ~f:(fun wl ->
-            match wl.lifetime with
-            | Lifetime.Expires e -> Int64.(e >= current_time)
-            | Forever -> true)
-          !wait_listeners);
+        wait_listeners;
+      List.filter
+        ~f:(fun wl ->
+          match wl.lifetime with
+          | Lifetime.Expires e -> Int64.(e >= current_time)
+          | Forever -> true)
+        wait_listeners);
   Thread.delay 0.1;
   remove_expired_entries_loop ()
 

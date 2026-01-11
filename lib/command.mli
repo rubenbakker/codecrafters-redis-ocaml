@@ -9,7 +9,6 @@ type post_process_t =
   | Propagate of Resp.t
   | Noop
 
-
 type context_t = {
   role : Options.role_t;
   socket : Unix.file_descr;
@@ -17,6 +16,7 @@ type context_t = {
   post_process : post_process_t;
   subscription_mode : bool;
   slave : Master.slave_t option;
+  is_authenticated : bool;
 }
 
 val parse_command_line : Resp.t -> command_t

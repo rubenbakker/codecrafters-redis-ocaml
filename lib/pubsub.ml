@@ -3,37 +3,32 @@ open Base
 type subscriber_t = { thread_id : int; socket : Unix.file_descr }
 type channel_t = { name : string; mutable subscribers : subscriber_t list }
 
-let channels : channel_t list ref = ref []
-let channels_lock = Stdlib.Mutex.create ()
+module Channels = Protected.Resource.Make (struct
+  type t = channel_t list
 
-let find_channel (channel_name : string) : channel_t option =
-  List.find ~f:(fun channel -> String.(channel.name = channel_name)) !channels
+  let state : t ref = ref []
+  let get () = !state
+  let set c = state := c
+end)
 
-(** lock the repo for access *)
-let unlock () : unit = Stdlib.Mutex.unlock channels_lock
-
-(** unlock the repo after access *)
-let lock () : unit = Stdlib.Mutex.lock channels_lock
-
-let protect fn =
-  Stdlib.Fun.protect ~finally:unlock (fun () ->
-      lock ();
-      fn ())
+let find_channel (channel_name : string) (channels : channel_t list) :
+    channel_t option =
+  List.find ~f:(fun channel -> String.(channel.name = channel_name)) channels
 
 let subscribe (channel_name : string) (thread_id : int)
     (socket : Unix.file_descr) : unit =
-  protect (fun _ ->
-      match find_channel channel_name with
+  Channels.mutate (fun channels ->
+      match find_channel channel_name channels with
       | Some channel ->
-          channel.subscribers <- { thread_id; socket } :: channel.subscribers
+          channel.subscribers <- { thread_id; socket } :: channel.subscribers;
+          channels
       | None ->
-          channels :=
-            { name = channel_name; subscribers = [ { thread_id; socket } ] }
-            :: !channels)
+          { name = channel_name; subscribers = [ { thread_id; socket } ] }
+          :: channels)
 
 let unsubscribe (channel_name : string) (thread_id : int) : unit =
-  protect (fun _ ->
-      match find_channel channel_name with
+  Channels.query (fun channels ->
+      match find_channel channel_name channels with
       | Some channel ->
           channel.subscribers <-
             List.filter
@@ -42,7 +37,7 @@ let unsubscribe (channel_name : string) (thread_id : int) : unit =
       | None -> ())
 
 let publish (channel_name : string) (message : string) : int =
-  protect (fun _ ->
+  Channels.query (fun channels ->
       let message_bytes =
         Resp.RespList
           [
@@ -52,18 +47,18 @@ let publish (channel_name : string) (message : string) : int =
           ]
         |> Resp.to_string |> Bytes.of_string
       in
-      match find_channel channel_name with
+      match find_channel channel_name channels with
       | Some channel ->
           channel.subscribers
           |> List.map ~f:(fun subscriber ->
-                 Unix.write subscriber.socket message_bytes 0
-                   (Bytes.length message_bytes))
+              Unix.write subscriber.socket message_bytes 0
+                (Bytes.length message_bytes))
           |> List.length
       | None -> 0)
 
 let channels_for_subscriber (thread_id : int) : string list =
-  protect (fun _ ->
-      List.fold !channels ~init:[] ~f:(fun acc channel ->
+  Channels.query (fun channels ->
+      List.fold channels ~init:[] ~f:(fun acc channel ->
           match
             List.find ~f:(fun s -> s.thread_id = thread_id) channel.subscribers
           with
