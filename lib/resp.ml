@@ -16,48 +16,6 @@ type t =
 exception InvalidData
 
 let null_string = "$-1\r\n"
-let integer_regex = Str.regexp "^\\:\\([\\+\\-]?\\)\\(.*\\)\r\n"
-let simple_string_regex = Str.regexp "^\\+\\(.*\\)\r\n"
-let bulk_string_regex = Str.regexp "^\\$\\([0-9]+\\)\r\n\\(.*\\)\r\n"
-let list_regexp = Str.regexp "^\\*\\([0-9]+\\)\r\n"
-
-let rec from_string_internal (str : string) (pos : int) : int * t =
-  let list_result = Str.string_match list_regexp str pos in
-  if list_result then (
-    let prefix_length = String.length (Str.matched_group 0 str) in
-    let count = Int.of_string (Str.matched_group 1 str) in
-    let list = ref [] in
-    let total_length = ref 0 in
-    for _idx = 0 to count - 1 do
-      let length, item =
-        from_string_internal str (pos + prefix_length + !total_length)
-      in
-      total_length := !total_length + length;
-      list := item :: !list
-    done;
-    (!total_length + prefix_length, RespList (List.rev !list)))
-  else
-    let integer_result = Str.string_match integer_regex str pos in
-    if integer_result then
-      let prefix = Str.matched_group 1 str in
-      let factor = match prefix with "-" -> -1 | _ -> 1 in
-      let value = Int.of_string (Str.matched_group 2 str) in
-      (String.length (Str.matched_group 0 str), Integer (value * factor))
-    else
-      let simple_string_result = Str.string_match simple_string_regex str pos in
-      if simple_string_result then
-        ( String.length (Str.matched_group 0 str),
-          SimpleString (Str.matched_group 1 str) )
-      else
-        let string_result = Str.string_match bulk_string_regex str pos in
-        if string_result then
-          ( String.length (Str.matched_group 0 str),
-            BulkString (Str.matched_group 2 str) )
-        else (0, BulkString "")
-
-let from_string (str : string) (pos : int) : t =
-  let _, item = from_string_internal str pos in
-  item
 
 let rec to_string (item : t) : string =
   match item with
@@ -121,28 +79,13 @@ let rec read_from_channel (channel : Stdlib.in_channel) : t * int =
         let count = read_line_int channel in
         List.range 0 count
         |> List.map ~f:(fun _ ->
-            let result, _ = read_from_channel channel in
-            result)
+               let result, _ = read_from_channel channel in
+               result)
         |> fun l -> RespList l
     | _ -> RespError "Error: not implemented"
   in
   let after = Stdlib.pos_in channel in
   (result, after - before)
-
-let%test_unit "from_string integer" =
-  [%test_eq: t] (from_string ":+55\r\n" 0) (Integer 55)
-
-let%test_unit "from_string integer" =
-  [%test_eq: t] (from_string ":55\r\n" 0) (Integer 55)
-
-let%test_unit "from_string integer" =
-  [%test_eq: t] (from_string ":-55\r\n" 0) (Integer (55 * -1))
-
-let%test_unit "from_string simple string" =
-  [%test_eq: t] (from_string "+Hey\r\n" 0) (SimpleString "Hey")
-
-let%test_unit "from_string bulk string" =
-  [%test_eq: t] (from_string "$3\r\nHey\r\n" 0) (BulkString "Hey")
 
 let%test_unit "to_string bulk string" =
   [%test_eq: string] (to_string (BulkString "Hey")) "$3\r\nHey\r\n"
@@ -164,12 +107,7 @@ let%test_unit "to_string integer" =
 let%test_unit "to_string error" =
   [%test_eq: string] (to_string (RespError "Error 77")) "-Error 77\r\n"
 
-let%test_unit "from_string list" =
-  [%test_eq: t]
-    (from_string "*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n" 0)
-    (RespList [ BulkString "hello"; BulkString "world" ])
-
-let%test_unit "from_string list with 2 bulk strings" =
+let%test_unit "to_string list with 2 bulk strings" =
   [%test_eq: string]
     (to_string (RespList [ BulkString "hello"; BulkString "world" ]))
     "*2\r\n$5\r\nhello\r\n$5\r\nworld\r\n"

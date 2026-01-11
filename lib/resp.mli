@@ -12,7 +12,6 @@ type t =
   | RespError of string
   | RespIgnore
 
-val from_string : string -> int -> t
 val to_string : t -> string
 val to_sexp : t -> Sexp.t
 val to_bulk_string : string -> string
