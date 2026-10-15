@@ -8,4 +8,4 @@ debug: true
 # on Codecrafters.
 #
 # Available versions: ocaml-5.3
-buildpack: ocaml-5.3
+buildpack: ocaml-5.5
